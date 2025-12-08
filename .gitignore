@@ -1,0 +1,22 @@
+# Do not push original paper code to the remote repository
+papers_code/
+
+# Virtual environment
+venv/
+
+# Typical Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+.venv
+
+# OS / IDE files
+.DS_Store
+.idea/
+.vscode/
+
+# Environment variables
+.env
