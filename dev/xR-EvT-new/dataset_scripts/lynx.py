@@ -112,12 +112,10 @@ if __name__ == "__main__":
 
     import pandas as pd
 
-    # CHANGE THIS PATH TO YOUR LOCAL DATASET LOCATION
-    dataset_root = "/path/to/dataset_LynX"
-
-    dataset_root = Path(dataset_root)
-    csv_path = dataset_root / "gesture_segmentation.csv"
-
+    # dataset_root can be modified as needed
+    dataset_root = Path("datasets/LynX/data")
+    csv_path = dataset_root.parent / "gesture_segmentation.csv"
+    
     if not csv_path.exists():
         raise FileNotFoundError(
             f"gesture_segmentation.csv not found at: {csv_path}"
