@@ -16,8 +16,8 @@ device = 'cuda:0'
 # device = 'cpu'
 
 
-path_model = './pretrained_models/DVS128_10_24ms_dwn/'
-# path_model = './pretrained_models/DVS128_11_24ms_dwn/'
+# path_model = './pretrained_models/DVS128_10_24ms_dwn/'
+path_model = './pretrained_models/DVS128_11_24ms_dwn/'
 # path_model = './pretrained_models/SLAnimals_4s_48ms_dwn/'
 # path_model = './pretrained_models/SLAnimals_3s_48ms_dwn/'
 # path_model = './pretrained_models/ASL_DVS_dwn/'
