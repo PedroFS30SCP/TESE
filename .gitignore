@@ -1,5 +1,6 @@
 # Do not push original paper code to the remote repository
 papers_code/
+datasets/
 
 # Virtual environment
 venv/
