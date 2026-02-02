@@ -8,3 +8,7 @@ This folder contains my personal development setup.
 This directory is used to test the **xR-EvT transformer** on a completely different dataset (**LynX**) that the model has never seen, in order to evaluate how well it generalizes.
 
 ⚠️ For now it's on the `papers_code/` directory 
+
+
+
+IMP: source /home/azureuser/TESE/venv/bin/activate

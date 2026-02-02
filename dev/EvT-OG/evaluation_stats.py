@@ -12,8 +12,8 @@ import evaluation_utils
 from trainer import EvNetModel
 
 
-device = 'cuda:0'
-# device = 'cpu'
+#device = 'cuda:0'
+device = 'cpu'
 
 
 # path_model = './pretrained_models/DVS128_10_24ms_dwn/'

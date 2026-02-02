@@ -10,7 +10,7 @@ os.chdir('..')
 chunk_len_ms = 12
 chunk_len_us = chunk_len_ms*1000
 height = width = 128
-mode = 'train'
+mode = 'test'
 
 # Read dataset filenames
 if mode == 'train':
