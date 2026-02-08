@@ -1,6 +1,7 @@
 # Do not push original paper code to the remote repository
 papers_code/
 datasets/
+dev/rpg_e2vid/datasets/
 
 # Virtual environment
 venv/
