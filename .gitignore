@@ -11,9 +11,16 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
+*.so
 .Python
 .env
 .venv
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
 
 # OS / IDE files
 .DS_Store
@@ -22,3 +29,12 @@ __pycache__/
 
 # Environment variables
 .env
+
+# TimeSformer generated artifacts (keep source/config tracked)
+dev/TimeSformer/build/
+dev/TimeSformer/timesformer.egg-info/
+dev/TimeSformer/**/__pycache__/
+dev/TimeSformer/**/*.pyc
+dev/TimeSformer/checkpoints/
+dev/TimeSformer/outputs/
+dev/TimeSformer/datasets/
