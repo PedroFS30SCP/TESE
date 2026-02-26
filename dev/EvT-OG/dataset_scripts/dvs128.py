@@ -3,27 +3,30 @@ from tqdm import tqdm
 import pickle
 import os
 import sparse
-os.chdir('..')
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_DEV_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, "..", ".."))
+# Centralized dataset root under <repo>/dev/datasets
+_EVT_ROOT = os.path.join(_DEV_ROOT, "datasets", "evt_og")
 
 
 
 chunk_len_ms = 12
 chunk_len_us = chunk_len_ms*1000
 height = width = 128
-mode = 'test'
+mode = 'train'
 
 # Read dataset filenames
 if mode == 'train':
-    # Source data folder
-    path_dataset_src = './datasets/DvsGesture/clean_dataset/train/'
-    # Target data folder
-    path_dataset_dst = './datasets/DvsGesture/clean_dataset_frames_{}/train/'.format(chunk_len_us)
+    path_dataset_src = os.path.join(_EVT_ROOT, "clean_dataset", "train")
+    path_dataset_dst = os.path.join(_EVT_ROOT, "clean_dataset_frames_{}".format(chunk_len_us), "train")
 else:
-    path_dataset_src = './datasets/DvsGesture/clean_dataset/test/'
-    path_dataset_dst = './datasets/DvsGesture/clean_dataset_frames_{}/test/'.format(chunk_len_us)
+    path_dataset_src = os.path.join(_EVT_ROOT, "clean_dataset", "test")
+    path_dataset_dst = os.path.join(_EVT_ROOT, "clean_dataset_frames_{}".format(chunk_len_us), "test")
 
 event_files = os.listdir(path_dataset_src)
-if not os.path.isdir(path_dataset_dst): os.makedirs(path_dataset_dst)
+if not os.path.isdir(path_dataset_dst):
+    os.makedirs(path_dataset_dst)
 
 
 # %%
@@ -31,7 +34,7 @@ if not os.path.isdir(path_dataset_dst): os.makedirs(path_dataset_dst)
 
 for ef in tqdm(event_files):
     
-    total_events, label = pickle.load(open(path_dataset_src+ef, 'rb'))
+    total_events, label = pickle.load(open(os.path.join(path_dataset_src, ef), 'rb'))
     total_events = total_events.astype('int32')
     
     total_chunks = []
@@ -59,8 +62,6 @@ for ef in tqdm(event_files):
     total_frames = np.clip(total_frames, a_min=0, a_max=255)
     total_frames = total_frames.astype('uint8')    
 
-    pickle.dump(total_frames, open(path_dataset_dst + ef, 'wb'))
+    pickle.dump(total_frames, open(os.path.join(path_dataset_dst, ef), 'wb'))
     
-
-
 

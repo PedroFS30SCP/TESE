@@ -2,6 +2,9 @@
 papers_code/
 datasets/
 dev/rpg_e2vid/datasets/
+# Keep TimeSformer dataset loader source code versioned.
+!dev/TimeSformer/timesformer/datasets/
+!dev/TimeSformer/timesformer/datasets/**
 
 # Virtual environment
 venv/
@@ -37,4 +40,3 @@ dev/TimeSformer/**/__pycache__/
 dev/TimeSformer/**/*.pyc
 dev/TimeSformer/checkpoints/
 dev/TimeSformer/outputs/
-dev/TimeSformer/datasets/

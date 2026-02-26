@@ -9,8 +9,8 @@ TRAIN:
   CHECKPOINT_FILE_PATH: ''
 
 DATA:
-  PATH_TO_DATA_DIR: datasets/DVS128/manifests/user01_fluorescent_led_8f
-  PATH_PREFIX: ''
+  PATH_TO_DATA_DIR: ../datasets/timesformer/DVS128/manifests/user01_fluorescent_led_8f
+  PATH_PREFIX: ../datasets/rpg_e2vid
   NUM_FRAMES: 8
   SAMPLING_RATE: 1
   TRAIN_JITTER_SCALES: [128, 160]

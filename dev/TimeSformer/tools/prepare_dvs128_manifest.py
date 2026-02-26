@@ -52,6 +52,13 @@ def parse_args():
         default=None,
         help="Output manifest directory. Default: datasets/DVS128/manifests/<sample>_<cliplen>f",
     )
+    parser.add_argument(
+        "--path-mode",
+        type=str,
+        choices=["rel", "abs"],
+        default="rel",
+        help="Store frame paths in manifest as relative-to --dvs-root (rel) or absolute (abs).",
+    )
     return parser.parse_args()
 
 
@@ -82,7 +89,20 @@ def load_timestamps_usec(path):
     return ts_usec
 
 
-def build_clips(frame_paths, ts_usec, label_segments, clip_len, stride):
+def build_clips(
+    frame_paths,
+    ts_usec,
+    label_segments,
+    clip_len,
+    stride,
+    path_mode,
+    path_base,
+):
+    def frame_to_str(p):
+        if path_mode == "abs":
+            return str(p.resolve())
+        return str(p.resolve().relative_to(path_base))
+
     clips = []
     clip_id = 0
     for label, t_start, t_end in label_segments:
@@ -101,7 +121,7 @@ def build_clips(frame_paths, ts_usec, label_segments, clip_len, stride):
                 {
                     "clip_id": f"clip_{clip_id:06d}",
                     "label": label,
-                    "frames": ";".join(str(p.resolve()) for p in clip_frames),
+                    "frames": ";".join(frame_to_str(p) for p in clip_frames),
                 }
             )
             clip_id += 1
@@ -140,8 +160,12 @@ def main():
     args = parse_args()
     sample_name = args.sample_name
 
-    labels_csv = args.dvs_root / f"{sample_name}_labels.csv"
     frames_dir = args.dvs_root / "dvs2vid" / sample_name
+    labels_csv_candidates = [
+        frames_dir / f"{sample_name}_labels.csv",
+        args.dvs_root / f"{sample_name}_labels.csv",
+    ]
+    labels_csv = next((p for p in labels_csv_candidates if p.exists()), None)
     timestamps_file = frames_dir / "timestamps.txt"
 
     if args.output_dir is None:
@@ -155,8 +179,11 @@ def main():
     if len(frame_paths) == 0:
         raise RuntimeError(f"No PNG frames found in {frames_dir}")
 
-    if not labels_csv.exists():
-        raise RuntimeError(f"Missing labels file: {labels_csv}")
+    if labels_csv is None:
+        raise RuntimeError(
+            "Missing labels file. Checked: "
+            + ", ".join(str(p) for p in labels_csv_candidates)
+        )
     if not timestamps_file.exists():
         raise RuntimeError(f"Missing timestamps file: {timestamps_file}")
 
@@ -173,6 +200,8 @@ def main():
         label_segments=label_segments,
         clip_len=args.clip_len,
         stride=args.stride,
+        path_mode=args.path_mode,
+        path_base=args.dvs_root.resolve(),
     )
     if len(clips) == 0:
         raise RuntimeError("No clips produced. Try smaller clip-len or stride.")
