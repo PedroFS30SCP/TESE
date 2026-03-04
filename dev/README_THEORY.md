@@ -14,7 +14,7 @@ My pipeline has 3 stages:
 
 ---
 
-## 2) Files You Run Directly
+## 2) Files to Run Directly
 
 ### `dev/env.sh`
 - What it does: sets `TESE_ROOT`, `DEV_ROOT`, and `DATA_ROOT`.
@@ -40,6 +40,13 @@ My pipeline has 3 stages:
 - What it does: loads EvT-OG pretrained checkpoint and reports performance/compute stats.
 - Why: quick benchmark and sanity check without retraining.
 - Status: **Original file (used as run script)**.
+
+### `dev/EvT-OG/data_generation.py`
+- What it does: builds EvT-OG dataloaders and extracts active patch tokens from sparse event frames.
+- Why: `evaluation_stats.py` loads this module indirectly via `Event_DataModule`.
+- Status: **Original file, modified**.
+- My changes:
+  - changed dataset folder path to match my centralized data location under `dev/datasets`.
 
 ### `dev/rpg_e2vid/scripts/aedat_to_e2vid.py`
 - What it does: converts DVS128 `.aedat` events to E2VID `.txt` format (`t x y p`).

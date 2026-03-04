@@ -21,8 +21,8 @@ os.makedirs(os.path.join(path_dataset_dst, "test"), exist_ok=True)
 
 
 # Pick ONE pair and comment the other.
-# train_files, test_files = 'trials_to_train.txt', 'trials_to_test.txt'
-train_files, test_files = '1s_trials_to_train.txt', '1s_trials_to_test.txt'
+train_files, test_files = 'trials_to_train.txt', 'trials_to_test.txt'
+#train_files, test_files = '1s_trials_to_train.txt', '1s_trials_to_test.txt'
 
 with open(os.path.join(path_dataset_src, train_files), 'r') as f:
     train_files = f.read().splitlines()

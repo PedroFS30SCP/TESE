@@ -16,9 +16,25 @@ source "$HOME/TESE/dev/env.sh"
 
 ```bash
 conda activate tese_py37
+pip install -r /home/ppfsa/TESE/dev/requirements.txt
+```
+
+# Confirm GPU is visible: 
+```bash
+python -c "import torch; print('cuda:', torch.cuda.is_available()); print('count:', torch.cuda.device_count()); print('gpu0:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
 ```
 
 ## 1) EvT-OG Evaluation Only (Pretrained Weights)
+
+Firts choosing CPU only or GPU, for GPU:
+
+Set GPU device in file:
+Edit dvs128_split_dataset.py (line 12)
+Change: device = 'cuda:0'
+
+Edit evaluation_stats.py (line 24)
+Change: train_files, test_files = 'trials_to_train.txt', 'trials_to_test.txt'
+
 Project root:
 
 ```bash

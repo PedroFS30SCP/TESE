@@ -377,7 +377,7 @@ class Event_DataModule(LightningDataModule):
         
         self.dataset_name = dataset_name
         if dataset_name == 'DVS128':
-            self.data_folder = './datasets/DvsGesture/clean_dataset_frames_12000/'
+            self.data_folder = '../datasets/evt_og/clean_dataset_frames_12000/'
             self.width, self.height = 128, 128
             self.num_classes = 12 - len(classes_to_exclude)
             self.class_mapping = copy.deepcopy(DVS128_class_mapping)

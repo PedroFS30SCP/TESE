@@ -33,7 +33,7 @@ opencv-python==4.11.0.86
 scikit-learn==1.0.2
 psutil==7.0.0
 tensorboard==2.11.2
-PyYAML==6.0.1
+PyYAML==5.4.1
 
 # EvT-OG requirements
 pytorch-lightning==1.3.8
