@@ -40,3 +40,4 @@ dev/TimeSformer/**/__pycache__/
 dev/TimeSformer/**/*.pyc
 dev/TimeSformer/checkpoints/
 dev/TimeSformer/outputs/
+dev/TimeSformer/timesformer_train.log

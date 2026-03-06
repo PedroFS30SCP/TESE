@@ -19,7 +19,7 @@ def parse_args():
     parser.add_argument(
         "--sample-name",
         type=str,
-        required=True,
+        default=None,
         help="Sample stem, e.g. user01_fluorescent_led.",
     )
     parser.add_argument(
@@ -59,23 +59,87 @@ def parse_args():
         default="rel",
         help="Store frame paths in manifest as relative-to --dvs-root (rel) or absolute (abs).",
     )
+    parser.add_argument(
+        "--sample-split",
+        type=str,
+        choices=["trainval", "test", "legacy"],
+        default="legacy",
+        help=(
+            "How to assign clips for this sample: "
+            "'trainval' splits into train/val only, "
+            "'test' sends all clips to test only, "
+            "'legacy' reuses val as test."
+        ),
+    )
+    parser.add_argument(
+        "--train-list",
+        type=Path,
+        default=None,
+        help="Optional path to official train trial list for direct global manifest build.",
+    )
+    parser.add_argument(
+        "--test-list",
+        type=Path,
+        default=None,
+        help="Optional path to official test trial list for direct global manifest build.",
+    )
     return parser.parse_args()
 
 
 def load_labels(path):
     with path.open("r") as f:
         rows = list(csv.DictReader(f))
+    if not rows:
+        return []
+
+    fieldnames = set(rows[0].keys())
     out = []
-    for r in rows:
-        # Convert dataset labels 1..11 to 0..10 for cross_entropy.
-        out.append(
-            (
-                int(r["class"]) - 1,
-                int(r["startTime_usec"]),
-                int(r["endTime_usec"]),
+    if {"class", "startTime_usec", "endTime_usec"}.issubset(fieldnames):
+        for r in rows:
+            # Convert dataset labels 1..11 to 0..10 for cross_entropy.
+            out.append(
+                (
+                    int(r["class"]) - 1,
+                    int(r["startTime_usec"]),
+                    int(r["endTime_usec"]),
+                )
             )
+        return out
+
+    if {"frame", "timestamp_sec", "class_id"}.issubset(fieldnames):
+        current_label = None
+        start_usec = None
+        prev_usec = None
+        for r in rows:
+            raw_label = int(r["class_id"])
+            # Skip background/unlabeled frames so final labels stay in 0..10.
+            if raw_label <= 0:
+                if current_label is not None and prev_usec is not None:
+                    out.append((current_label, start_usec, prev_usec))
+                    current_label = None
+                    start_usec = None
+                prev_usec = None
+                continue
+
+            label = raw_label - 1
+            ts_usec = int(round(float(r["timestamp_sec"]) * 1_000_000))
+            if current_label is None:
+                current_label = label
+                start_usec = ts_usec
+            elif label != current_label:
+                out.append((current_label, start_usec, prev_usec))
+                current_label = label
+                start_usec = ts_usec
+            prev_usec = ts_usec
+        if current_label is not None and prev_usec is not None:
+            out.append((current_label, start_usec, prev_usec))
+        return out
+
+    raise RuntimeError(
+        "Unsupported labels CSV format in {} with columns {}".format(
+            path, sorted(fieldnames)
         )
-    return out
+    )
 
 
 def load_timestamps_usec(path):
@@ -156,10 +220,7 @@ def write_manifest(path, rows):
         writer.writerows(rows)
 
 
-def main():
-    args = parse_args()
-    sample_name = args.sample_name
-
+def build_sample_rows(args, sample_name):
     frames_dir = args.dvs_root / "dvs2vid" / sample_name
     labels_csv_candidates = [
         frames_dir / f"{sample_name}_labels.csv",
@@ -167,13 +228,6 @@ def main():
     ]
     labels_csv = next((p for p in labels_csv_candidates if p.exists()), None)
     timestamps_file = frames_dir / "timestamps.txt"
-
-    if args.output_dir is None:
-        output_dir = (
-            args.dvs_root / "manifests" / f"{sample_name}_{args.clip_len}f"
-        )
-    else:
-        output_dir = args.output_dir
 
     frame_paths = sorted(frames_dir.glob("frame_*.png"))
     if len(frame_paths) == 0:
@@ -206,9 +260,74 @@ def main():
     if len(clips) == 0:
         raise RuntimeError("No clips produced. Try smaller clip-len or stride.")
 
-    train, val = split_clips(clips, args.val_ratio, args.seed)
-    # For this starter setup, reuse validation as test split.
-    test = list(val)
+    if args.sample_split == "trainval":
+        train, val = split_clips(clips, args.val_ratio, args.seed)
+        test = []
+    elif args.sample_split == "test":
+        train, val = [], []
+        test = clips
+    else:
+        train, val = split_clips(clips, args.val_ratio, args.seed)
+        test = list(val)
+
+    return clips, train, val, test
+
+
+def iter_trial_names(path):
+    with path.open("r") as f:
+        for line in f:
+            name = line.strip()
+            if name:
+                yield name
+
+
+def build_global_manifests(args, output_dir):
+    train_rows, val_rows, test_rows = [], [], []
+
+    for aedat_name in iter_trial_names(args.train_list):
+        sample_name = aedat_name.replace(".aedat", "")
+        sample_args = argparse.Namespace(**vars(args))
+        sample_args.sample_split = "trainval"
+        _, train, val, _ = build_sample_rows(sample_args, sample_name)
+        train_rows.extend(train)
+        val_rows.extend(val)
+
+    for aedat_name in iter_trial_names(args.test_list):
+        sample_name = aedat_name.replace(".aedat", "")
+        sample_args = argparse.Namespace(**vars(args))
+        sample_args.sample_split = "test"
+        _, _, _, test = build_sample_rows(sample_args, sample_name)
+        test_rows.extend(test)
+
+    write_manifest(output_dir / "train.csv", train_rows)
+    write_manifest(output_dir / "val.csv", val_rows)
+    write_manifest(output_dir / "test.csv", test_rows)
+
+    print(f"Wrote manifests to: {output_dir}")
+    print(f"Train clips: {len(train_rows)}")
+    print(f"Val clips:   {len(val_rows)}")
+    print(f"Test clips:  {len(test_rows)}")
+
+
+def main():
+    args = parse_args()
+    if args.train_list or args.test_list:
+        if not (args.train_list and args.test_list):
+            raise RuntimeError("Provide both --train-list and --test-list for global mode.")
+        if args.output_dir is None:
+            raise RuntimeError("Provide --output-dir for global mode.")
+        build_global_manifests(args, args.output_dir)
+        return
+
+    if args.sample_name is None:
+        raise RuntimeError("Provide --sample-name for single-sample mode.")
+
+    if args.output_dir is None:
+        output_dir = args.dvs_root / "manifests" / f"{args.sample_name}_{args.clip_len}f"
+    else:
+        output_dir = args.output_dir
+
+    clips, train, val, test = build_sample_rows(args, args.sample_name)
 
     write_manifest(output_dir / "train.csv", train)
     write_manifest(output_dir / "val.csv", val)

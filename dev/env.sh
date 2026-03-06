@@ -12,7 +12,15 @@ fi
 
 export DEV_ROOT="${TESE_ROOT}/dev"
 export DATA_ROOT="${DEV_ROOT}/datasets"
+export RAW_ROOT="${DATA_ROOT}/raw/DVS128"
+export DVS_ROOT="${DATA_ROOT}/rpg_e2vid"
+export GLOBAL_ROOT="${DATA_ROOT}/timesformer/DVS128/manifests/all_samples_8f"
+export PYTHONPATH="${DEV_ROOT}/TimeSformer${PYTHONPATH:+:${PYTHONPATH}}"
 
 echo "TESE_ROOT=${TESE_ROOT}"
 echo "DEV_ROOT=${DEV_ROOT}"
 echo "DATA_ROOT=${DATA_ROOT}"
+echo "RAW_ROOT=${RAW_ROOT}"
+echo "DVS_ROOT=${DVS_ROOT}"
+echo "GLOBAL_ROOT=${GLOBAL_ROOT}"
+echo "PYTHONPATH=${PYTHONPATH}"

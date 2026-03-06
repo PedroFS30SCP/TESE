@@ -9,7 +9,7 @@ TRAIN:
   CHECKPOINT_FILE_PATH: ''
 
 DATA:
-  PATH_TO_DATA_DIR: ../datasets/timesformer/DVS128/manifests/user01_fluorescent_led_8f
+  PATH_TO_DATA_DIR: ../datasets/timesformer/DVS128/manifests/all_samples_8f
   PATH_PREFIX: ../datasets/rpg_e2vid
   NUM_FRAMES: 8
   SAMPLING_RATE: 1
@@ -57,4 +57,4 @@ DATA_LOADER:
 NUM_GPUS: 1
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: outputs/dvs128_user01_finetune
+OUTPUT_DIR: outputs/dvs128_all_samples_finetune

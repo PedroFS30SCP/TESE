@@ -68,52 +68,52 @@ cd "$DEV_ROOT/rpg_e2vid"
 ```
 
 Assumed paths:
-- Raw AEDAT files: `$DATA_ROOT/raw/DVS128/*.aedat`
-- Raw labels CSV: `$DATA_ROOT/raw/DVS128/*_labels.csv`
-- Trial lists: `$DATA_ROOT/raw/DVS128/trials_to_train.txt` and `trials_to_test.txt`
+- Raw AEDAT files: `$RAW_ROOT/*.aedat`
+- Raw labels CSV: `$RAW_ROOT/*_labels.csv`
+- Trial lists: `$RAW_ROOT/trials_to_train.txt` and `trials_to_test.txt`
 - E2VID checkpoint: `$DEV_ROOT/rpg_e2vid/pretrained/E2VID_lightweight.pth.tar`
-- Output sample folders: `$DATA_ROOT/rpg_e2vid/dvs2vid/<sample_name>/`
+- Output sample folders: `$DVS_ROOT/dvs2vid/<sample_name>/`
 
 ### 2.1 CPU mode (one sample, quick smoke test)
 
 ```bash
 cd "$DEV_ROOT/rpg_e2vid"
-mkdir -p "$DATA_ROOT/rpg_e2vid/dvs2vid"
+mkdir -p "$DVS_ROOT/dvs2vid"
 
 python scripts/aedat_to_e2vid.py \
-  --input "$DATA_ROOT/raw/DVS128/user01_fluorescent_led.aedat" \
-  --output "$DATA_ROOT/raw/DVS128/user01_fluorescent_led.txt" \
+  --input "$RAW_ROOT/user01_fluorescent_led.aedat" \
+  --output "$RAW_ROOT/user01_fluorescent_led.txt" \
   --time_unit auto
 
 CUDA_VISIBLE_DEVICES="" python run_reconstruction.py \
   -c pretrained/E2VID_lightweight.pth.tar \
-  -i "$DATA_ROOT/raw/DVS128/user01_fluorescent_led.txt" \
-  --output_folder "$DATA_ROOT/rpg_e2vid/dvs2vid" \
+  -i "$RAW_ROOT/user01_fluorescent_led.txt" \
+  --output_folder "$DVS_ROOT/dvs2vid" \
   --dataset_name user01_fluorescent_led \
   --fixed_duration -T 33.33 \
   --auto_hdr \
   --compute_voxel_grid_on_cpu
 
-cp "$DATA_ROOT/raw/DVS128/user01_fluorescent_led_labels.csv" \
-  "$DATA_ROOT/rpg_e2vid/dvs2vid/user01_fluorescent_led/"
+cp "$RAW_ROOT/user01_fluorescent_led_labels.csv" \
+  "$DVS_ROOT/dvs2vid/user01_fluorescent_led/"
 ```
 
 ### 2.2 GPU mode (full dataset)
 
-Run this on the GPU machine:
+Run this on the GPU machine to covert aedat to txt and then to PNG:
 
 ```bash
 cd "$DEV_ROOT/rpg_e2vid"
-mkdir -p "$DATA_ROOT/rpg_e2vid/dvs2vid"
+mkdir -p "$DVS_ROOT/dvs2vid"
 
-for LIST in "$DATA_ROOT/raw/DVS128/trials_to_train.txt" "$DATA_ROOT/raw/DVS128/trials_to_test.txt"; do
+for LIST in "$RAW_ROOT/trials_to_train.txt" "$RAW_ROOT/trials_to_test.txt"; do
   while read -r AEDAT_NAME; do
     [ -z "$AEDAT_NAME" ] && continue
     BASE="${AEDAT_NAME%.aedat}"
-    IN_AEDAT="$DATA_ROOT/raw/DVS128/${AEDAT_NAME}"
-    OUT_TXT="$DATA_ROOT/raw/DVS128/${BASE}.txt"
-    OUT_DIR="$DATA_ROOT/rpg_e2vid/dvs2vid/${BASE}"
-    LABEL_CSV="$DATA_ROOT/raw/DVS128/${BASE}_labels.csv"
+    IN_AEDAT="$RAW_ROOT/${AEDAT_NAME}"
+    OUT_TXT="$RAW_ROOT/${BASE}.txt"
+    OUT_DIR="$DVS_ROOT/dvs2vid/${BASE}"
+    LABEL_CSV="$RAW_ROOT/${BASE}_labels.csv"
 
     [ -f "$IN_AEDAT" ] || { echo "Missing $IN_AEDAT, skipping"; continue; }
     [ -f "$LABEL_CSV" ] || { echo "Missing $LABEL_CSV, skipping"; continue; }
@@ -124,7 +124,7 @@ for LIST in "$DATA_ROOT/raw/DVS128/trials_to_train.txt" "$DATA_ROOT/raw/DVS128/t
     python run_reconstruction.py \
       -c pretrained/E2VID_lightweight.pth.tar \
       -i "$OUT_TXT" \
-      --output_folder "$DATA_ROOT/rpg_e2vid/dvs2vid" \
+      --output_folder "$DVS_ROOT/dvs2vid" \
       --dataset_name "$BASE" \
       --fixed_duration -T 33.33 --auto_hdr
 
@@ -147,56 +147,32 @@ Example for one sample:
 cd "$DEV_ROOT/TimeSformer"
 
 python3 tools/prepare_dvs128_manifest.py \
-  --dvs-root "$DATA_ROOT/rpg_e2vid" \
+  --dvs-root "$DVS_ROOT" \
   --sample-name user01_fluorescent_led \
   --clip-len 8 \
   --stride 4 \
   --val-ratio 0.2 \
   --seed 0 \
+  --sample-split trainval \
   --path-mode rel \
   --output-dir "$DATA_ROOT/timesformer/DVS128/manifests/user01_fluorescent_led_8f"
 ```
 
-Full dataset (automatic build + merge to one global manifest):
+Full dataset (official split: train list -> train/val, test list -> test):
 
 ```bash
 cd "$DEV_ROOT/TimeSformer"
 
-RAW_ROOT="$DATA_ROOT/raw/DVS128"
-DVS_ROOT="$DATA_ROOT/rpg_e2vid"
-PER_SAMPLE_ROOT="$DATA_ROOT/timesformer/DVS128/manifests/per_sample"
-GLOBAL_ROOT="$DATA_ROOT/timesformer/DVS128/manifests/all_samples_8f"
-
-mkdir -p "$PER_SAMPLE_ROOT" "$GLOBAL_ROOT"
-
-for SPLIT in train val test; do
-  echo "clip_id,label,frames" > "$GLOBAL_ROOT/${SPLIT}.csv"
-done
-
-for LIST in "$RAW_ROOT/trials_to_train.txt" "$RAW_ROOT/trials_to_test.txt"; do
-  while read -r AEDAT_NAME; do
-    [ -z "$AEDAT_NAME" ] && continue
-    BASE="${AEDAT_NAME%.aedat}"
-    SAMPLE_DIR="$DVS_ROOT/dvs2vid/$BASE"
-    SAMPLE_OUT="$PER_SAMPLE_ROOT/${BASE}_8f"
-
-    [ -d "$SAMPLE_DIR" ] || { echo "Missing frames for $BASE, skipping"; continue; }
-    [ -f "$SAMPLE_DIR/${BASE}_labels.csv" ] || { echo "Missing labels for $BASE, skipping"; continue; }
-
-    python3 tools/prepare_dvs128_manifest.py \
-      --dvs-root "$DVS_ROOT" \
-      --sample-name "$BASE" \
-      --clip-len 8 \
-      --stride 4 \
-      --val-ratio 0.2 \
-      --seed 0 \
-      --output-dir "$SAMPLE_OUT" || continue
-
-    for SPLIT in train val test; do
-      tail -n +2 "$SAMPLE_OUT/${SPLIT}.csv" >> "$GLOBAL_ROOT/${SPLIT}.csv"
-    done
-  done < "$LIST"
-done
+python3 tools/prepare_dvs128_manifest.py \
+  --dvs-root "$DVS_ROOT" \
+  --train-list "$RAW_ROOT/trials_to_train.txt" \
+  --test-list "$RAW_ROOT/trials_to_test.txt" \
+  --clip-len 8 \
+  --stride 4 \
+  --val-ratio 0.2 \
+  --seed 0 \
+  --path-mode rel \
+  --output-dir "$GLOBAL_ROOT"
 ```
 
 ### 3.2 Fine-tune
@@ -231,18 +207,24 @@ python3 tools/run_net.py \
 - `dvs128_testing.ipynb`: notebook that implements **Event preprocessing**, **Event-frame building**, and **activated patch extraction**.
 - `lynx_testing.ipynb`: notebook that implements **frame preprocessing**, **temporal window (Δt) building**, **adapted event-frame building**, and **activated patch extraction**.
 
-IMP: 
-- source ~/TESE/venv/bin/activate
-- conda activate tese_py37
+For starting the model ofline:
 
-## Final Note (Full Dataset)
-- For **full-dataset TimeSformer training**, use the merged manifest folder:
-  - `"$DATA_ROOT/timesformer/DVS128/manifests/all_samples_8f"`
-- If needed, override at runtime:
 ```bash
-python3 tools/run_net.py \
+cd "$DEV_ROOT/TimeSformer" 
+nohup python3 tools/run_net.py \
   --cfg configs/DVS128/TimeSformer_divST_8x1_128_finetune.yaml \
-  DATA.PATH_TO_DATA_DIR "$DATA_ROOT/timesformer/DVS128/manifests/all_samples_8f" \
   TRAIN.CHECKPOINT_FILE_PATH "$DEV_ROOT/TimeSformer/checkpoints/TimeSformer_divST_8_224_SSv2.pyth" \
-  NUM_GPUS 1
+  NUM_GPUS 1 \
+  > "$DEV_ROOT/TimeSformer/timesformer_train.log" 2>&1 &
 ```
+
+To verify the log
+
+```bash
+ps -fu "$USER" | grep run_net.py
+tail -f "$DEV_ROOT/TimeSformer/timesformer_train.log"
+```
+
+final result for Timesformer:
+test_top1_acc = 90.23%
+test_top5_acc = 99.85%
