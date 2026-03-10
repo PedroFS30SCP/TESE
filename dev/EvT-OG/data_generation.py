@@ -17,8 +17,6 @@ DVS128_class_mapping = {0: 'background', 1: 'hand_clapping', 2: 'right_hand_wave
                  7: 'left_arm_counter_clockwise', 8: 'arm_roll', 
                  9: 'air_drums', 10: 'air_guitar', 11: 'other_gestures'}
 
-
-
 # EventDataset load the event data organized in sparse frames
 # Each sparse frame represents 2-12ms
 # Contiguous frames are processed together to represent a time-window (24-48-100ms)
@@ -34,7 +32,8 @@ class EventDataset(Dataset):
                  min_patches_per_chunk, # Minimum amount of patches per time-window
                  num_extra_chunks,      # Number of extra sparse frames to extend the time-window if needed
                  dataset_name, height, width, 
-                 classes_to_exclude=[]  # Used to exclude classes from DV128
+                 classes_to_exclude=[],  # Used to exclude classes from DV128
+                 sample_names=None
                  ):
         
         self.samples_folder = samples_folder
@@ -82,7 +81,7 @@ class EventDataset(Dataset):
         self.height = height
         self.width = width
 
-        self.samples = os.listdir(samples_folder)
+        self.samples = sorted(sample_names) if sample_names is not None else sorted(os.listdir(samples_folder))
         if dataset_name == 'DVS128':
             for l in classes_to_exclude:
                 self.samples = [ s for s in self.samples if '_label{:02}'.format(l) not in s ]
@@ -352,7 +351,8 @@ class Event_DataModule(LightningDataModule):
                  dataset_name,
                  skip_last_event=False, sample_repetitions=1, preproc_polarity=None, 
                  custom_sampler = True,
-                 workers=8, pin_memory=False, classes_to_exclude=[], balance=None):
+                 workers=8, pin_memory=False, classes_to_exclude=[], balance=None,
+                 val_ratio=0.2, val_seed=0, use_test_as_val=False):
         super().__init__()
         self.batch_size = batch_size
         self.chunk_len_ms = chunk_len_ms
@@ -370,7 +370,6 @@ class Event_DataModule(LightningDataModule):
         self.skip_last_event = skip_last_event
         self.pin_memory = pin_memory
         self.classes_to_exclude = classes_to_exclude
-        
         self.pre_padding = True
         self.custom_sampler = custom_sampler
         
@@ -455,6 +454,19 @@ class Event_DataModule(LightningDataModule):
             dl = DataLoader(dt, batch_size=self.batch_size, collate_fn=self.custom_collate_fn, shuffle=True, num_workers=self.workers, pin_memory=self.pin_memory)
         return dl
     def val_dataloader(self):
+        dt = EventDataset(self.data_folder+'val/', chunk_len_ms = self.chunk_len_ms, 
+                           validation=True, 
+                           preproc_polarity=self.preproc_polarity, patch_size=self.patch_size,
+                           min_activations_per_patch=self.min_activations_per_patch,
+                           bins = self.bins, 
+                           min_patches_per_chunk = self.min_patches_per_chunk,
+                           num_extra_chunks = self.num_extra_chunks,
+                           dataset_name=self.dataset_name, height=self.height, width=self.width,
+                           augmentation_params=self.augmentation_params, 
+                           classes_to_exclude=self.classes_to_exclude)
+        dl = DataLoader(dt, batch_size=(self.batch_size//2)+1, shuffle=False, collate_fn=self.custom_collate_fn, num_workers=self.workers, pin_memory=self.pin_memory)
+        return dl
+    def test_dataloader(self):
         dt = EventDataset(self.data_folder+'test/', chunk_len_ms = self.chunk_len_ms, 
                            validation=True, 
                            preproc_polarity=self.preproc_polarity, patch_size=self.patch_size,
@@ -469,6 +481,3 @@ class Event_DataModule(LightningDataModule):
         return dl
     
     
-
-
-

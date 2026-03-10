@@ -50,8 +50,13 @@ class EvNetModel(LightningModule):
        
     def init_optimizers(self):
         self.criterion = nn.NLLLoss(weight = self.loss_weights)
-        self.accuracy = pl.metrics.Accuracy()
         
+    def _accuracy_scores(self, clf_logits, y):
+        preds = torch.argmax(clf_logits, dim=-1)
+        top1_acc = (preds == y).float().mean()
+        top5_idx = torch.topk(clf_logits, k=min(5, clf_logits.shape[-1]), dim=-1).indices
+        top5_acc = top5_idx.eq(y.unsqueeze(-1)).any(dim=-1).float().mean()
+        return top1_acc, top5_acc
 
     def forward(self, x, pixels):
         # Get updated latent vectors
@@ -84,12 +89,11 @@ class EvNetModel(LightningModule):
         logs = {}
             
         loss_clf = self.criterion(clf_logits, y)
-        preds = torch.argmax(clf_logits, dim=-1)
-        
-        acc = self.accuracy(preds, y)
+        acc, acc_top5 = self._accuracy_scores(clf_logits, y)
  
         logs['loss_clf'] = loss_clf
         logs['acc'] = acc
+        logs['acc_top5'] = acc_top5
         
      
         logs['loss_total'] = loss_clf + loss_contr

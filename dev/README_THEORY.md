@@ -27,7 +27,8 @@ My pipeline has 3 stages:
 - Status: **Original file, modified**.
 - My changes:
   - changed paths to centralized dataset root under `dev/datasets`.
-  - added simple train/test list toggle for full dataset vs 1-sample mode.
+  - added validation split support, so the script now writes `train`, `val`, and `test`.
+  - kept the simple full-dataset vs 1-sample trial-list toggle.
 
 ### `dev/EvT-OG/dataset_scripts/dvs128.py`
 - What it does: converts event segments into sparse frame chunks (`clean_dataset_frames_*`) for EvT-OG input.
@@ -35,11 +36,17 @@ My pipeline has 3 stages:
 - Status: **Original file, modified**.
 - My changes:
   - removed machine-specific assumptions and moved to centralized `dev/datasets` paths.
+  - added CLI split selection with `--mode train|val|test|all`.
+  - default behavior now builds all available splits in one run.
 
 ### `dev/EvT-OG/evaluation_stats.py`
-- What it does: loads EvT-OG pretrained checkpoint and reports performance/compute stats.
-- Why: quick benchmark and sanity check without retraining.
-- Status: **Original file (used as run script)**.
+- What it does: loads an EvT-OG checkpoint and reports performance/compute stats.
+- Why: quick benchmark and sanity check after training or with pretrained weights.
+- Status: **Original file, modified**.
+- My changes:
+  - added explicit val-vs-test evaluation selection.
+  - added post-hoc top-5 accuracy computation.
+  - updated the printed summary so benchmark outputs are clearer.
 
 ### `dev/EvT-OG/data_generation.py`
 - What it does: builds EvT-OG dataloaders and extracts active patch tokens from sparse event frames.
@@ -47,6 +54,8 @@ My pipeline has 3 stages:
 - Status: **Original file, modified**.
 - My changes:
   - changed dataset folder path to match my centralized data location under `dev/datasets`.
+  - added separate validation and test dataloaders.
+  - added optional sample-name control inside the dataset loader.
 
 ### `dev/rpg_e2vid/scripts/aedat_to_e2vid.py`
 - What it does: converts DVS128 `.aedat` events to E2VID `.txt` format (`t x y p`).
@@ -65,6 +74,9 @@ My pipeline has 3 stages:
 - What it does: builds `train.csv`, `val.csv`, `test.csv` clip manifests from reconstructed PNGs + labels.
 - Why: TimeSformer dataset loader needs clip manifests describing frame sequences and class labels.
 - Status: **Created by me (custom)**.
+- My changes:
+  - added support for explicit `--val-list` in global manifest mode.
+  - changed global manifest generation to use explicit train/val/test trial lists instead of deriving validation from the training list.
 
 ### `dev/TimeSformer/tools/run_net.py`
 - What it does: main TimeSformer train/val/test entrypoint.
@@ -108,6 +120,44 @@ These are not usually run directly, but are used by `run_net.py`.
 ### `dev/TimeSformer/timesformer/datasets/multigrid_helper.py`
 - Why modified: replaced deprecated `torch._six` usage for compatibility.
 - Status: **Original file, modified**.
+
+### `dev/TimeSformer/tools/train_net.py`
+- What it does: contains the TimeSformer training and validation loop.
+- Why modified: needed validation loss in the logged benchmark outputs.
+- Status: **Original file, modified**.
+- My changes:
+  - added validation-loss computation during `eval_epoch`.
+  - passed validation loss into the validation meter so it gets logged.
+
+### `dev/TimeSformer/timesformer/utils/meters.py`
+- What it does: tracks and logs TimeSformer training/validation metrics.
+- Why modified: benchmark plots need validation loss, not only top-1/top-5 error.
+- Status: **Original file, modified**.
+- My changes:
+  - extended `ValMeter` to accumulate validation loss.
+  - added validation loss to per-iteration and per-epoch logs.
+
+### `dev/EvT-OG/trainer.py`
+- What it does: defines the EvT-OG Lightning training module and metric logging.
+- Why modified: benchmark comparison needs both top-1 and top-5 accuracy.
+- Status: **Original file, modified**.
+- My changes:
+  - replaced the old Lightning accuracy helper with manual top-1/top-5 computation.
+  - added `acc_top5` logging during training.
+
+### `dev/EvT-OG/evaluation_utils.py`
+- What it does: helper functions for reading logs, plotting, and evaluating EvT-OG runs.
+- Why modified: benchmark analysis needs top-5 support and cleaner log parsing.
+- Status: **Original file, modified**.
+- My changes:
+  - added top-5 extraction in evaluation summaries.
+  - updated training-evolution plotting to show top-5 when available.
+  - made `val_acc` column selection more explicit.
+
+### `dev/benchmark/DVS128/evt_vs_tsformer.ipynb`
+- What it does: benchmark notebook comparing EvT-OG and TimeSformer on DVS128.
+- Why: centralizes accuracy, confusion matrices, timing, memory, and curve analysis in one place.
+- Status: **Created by me (custom)**.
 
 ---
 

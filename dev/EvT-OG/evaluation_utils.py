@@ -35,8 +35,9 @@ def plot_training_evolution(path_model):
     
     lr_col = [ c for c in logs.columns if 'lr' in c ][0]
     lr = logs[~logs[lr_col].isna()][lr_col]
-    c = [ c for c in logs.columns if 'val_acc' in c ][0]
+    c = [ c for c in logs.columns if c == 'val_acc' ][0]
     val_acc = logs[~logs[c].isna()][c]
+    val_acc_top5 = logs[~logs['val_acc_top5'].isna()]['val_acc_top5'] if 'val_acc_top5' in logs else None
 
     fig, ax1 = plt.subplots(figsize=(12,6), dpi=200)
     ax2 = ax1.twinx()
@@ -47,6 +48,8 @@ def plot_training_evolution(path_model):
         ax1.plot(loss.values, label=c)
         
     ax2.plot(val_acc.values, 'g')
+    if val_acc_top5 is not None and len(val_acc_top5) != 0:
+        ax2.plot(val_acc_top5.values, color='lime', alpha=0.7)
     ax3.plot(lr.values, 'r')
     
     if 'ASL' in path_model: ax2.set_ylim(0.95, 1)  # Acc lims
@@ -81,8 +84,9 @@ def get_evaluation_results(path_model, path_weights, skip_validation=False, forc
     
     stats = {}
     logs = load_csv_logs_as_df(path_model)
-    c = [ c for c in logs.columns if 'val_acc' in c ][0]
+    c = [ c for c in logs.columns if c == 'val_acc' ][0]
     stats['training_val_acc'] = logs[~logs[c].isna()][c].max()
+    stats['training_val_acc_top5'] = logs[~logs['val_acc_top5'].isna()]['val_acc_top5'].max() if 'val_acc_top5' in logs else None
     stats['training_val_loss'] = logs[~logs['val_loss_total'].isna()]['val_loss_total'].min()
     stats['training_val_loss_total'] = logs[~logs['val_loss_total'].isna()]['val_loss_total'].min()
     stats['num_epochs'] = int(logs['epoch'].max())
@@ -107,15 +111,17 @@ def get_evaluation_results(path_model, path_weights, skip_validation=False, forc
         # Get predictions and accuracy
         print();print(' * Evaluating...')
         t = time.time()
-        y_true, y_pred = [], []
+        y_true, y_pred, y_top5 = [], [], []
         for polarity, pixels, labels in tqdm(val_data):
             polarity, pixels, label = polarity.to(device), pixels.to(device), labels.to(device)
             embs, clf_logits = model(polarity, pixels)
             y_true.append(label[0])
             y_pred.append(clf_logits.argmax())
+            y_top5.append(torch.topk(clf_logits, k=min(5, clf_logits.shape[-1]), dim=-1).indices[0].to("cpu"))
         t = time.time() - t
         y_true, y_pred = torch.stack(y_true).to("cpu"), torch.stack(y_pred).to("cpu")
         acc_score = Accuracy()(y_true, y_pred).item()
+        acc_top5 = torch.stack([top5.eq(label).any().float() for label, top5 in zip(y_true, y_top5)]).mean().item()
     
         # Get stats
         total_time_ms = t*1000
@@ -125,6 +131,7 @@ def get_evaluation_results(path_model, path_weights, skip_validation=False, forc
         total_events = [ d[0].shape[2] for d in val_data ]
     
         stats['validation_val_acc'] = acc_score
+        stats['validation_val_acc_top5'] = acc_top5
         stats['sequence_ms'] = total_time_ms/num_samples
         stats['chunk_ms'] = total_time_ms/num_chunks
         stats['events_per_chunk'] = {'mean': np.mean(total_events), 'median': np.median(total_events), 'p05': np.percentile(total_events, 5), 'p95': np.percentile(total_events, 95)}
@@ -156,6 +163,7 @@ def get_evaluation_results(path_model, path_weights, skip_validation=False, forc
     else:
         def_val = 0.0
         stats['validation_val_acc'] = def_val
+        stats['validation_val_acc_top5'] = def_val
         stats['sequence_ms'] = def_val
         stats['chunk_ms'] = def_val
         stats['events_per_chunk'] = def_val
@@ -164,7 +172,6 @@ def get_evaluation_results(path_model, path_weights, skip_validation=False, forc
 
         
     return all_params, stats, df_cm
-
 
 
 

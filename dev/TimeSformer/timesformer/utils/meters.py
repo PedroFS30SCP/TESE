@@ -423,6 +423,8 @@ class ValMeter(object):
         self.iter_timer = Timer()
         self.data_timer = Timer()
         self.net_timer = Timer()
+        self.loss = ScalarMeter(cfg.LOG_PERIOD)
+        self.loss_total = 0.0
         # Current minibatch errors (smoothed over a window).
         self.mb_top1_err = ScalarMeter(cfg.LOG_PERIOD)
         self.mb_top5_err = ScalarMeter(cfg.LOG_PERIOD)
@@ -445,6 +447,8 @@ class ValMeter(object):
         Reset the Meter.
         """
         self.iter_timer.reset()
+        self.loss.reset()
+        self.loss_total = 0.0
         self.mb_top1_err.reset()
         self.mb_top5_err.reset()
         self.num_top1_mis = 0
@@ -475,14 +479,17 @@ class ValMeter(object):
         self.data_timer.pause()
         self.net_timer.reset()
 
-    def update_stats(self, top1_err, top5_err, mb_size, stats={}):
+    def update_stats(self, top1_err, top5_err, loss, mb_size, stats={}):
         """
         Update the current stats.
         Args:
             top1_err (float): top1 error rate.
             top5_err (float): top5 error rate.
+            loss (float): loss value.
             mb_size (int): mini batch size.
         """
+        self.loss.add_value(loss)
+        self.loss_total += loss * mb_size
         self.mb_top1_err.add_value(top1_err)
         self.mb_top5_err.add_value(top5_err)
         self.num_top1_mis += top1_err * mb_size
@@ -530,6 +537,7 @@ class ValMeter(object):
         if not self._cfg.DATA.MULTI_LABEL:
             stats["top1_err"] = self.mb_top1_err.get_win_median()
             stats["top5_err"] = self.mb_top5_err.get_win_median()
+            stats["loss"] = self.loss.get_win_median()
         for key in self.extra_stats.keys():
             stats[key] = self.extra_stats[key].get_win_median()
         logging.log_json_stats(stats)
@@ -557,11 +565,13 @@ class ValMeter(object):
             top5_err = self.num_top5_mis / self.num_samples
             self.min_top1_err = min(self.min_top1_err, top1_err)
             self.min_top5_err = min(self.min_top5_err, top5_err)
+            avg_loss = self.loss_total / self.num_samples
 
             stats["top1_err"] = top1_err
             stats["top5_err"] = top5_err
             stats["min_top1_err"] = self.min_top1_err
             stats["min_top5_err"] = self.min_top5_err
+            stats["loss"] = avg_loss
 
         for key in self.extra_stats.keys():
             stats[key] = self.extra_stats_total[key] / self.num_samples

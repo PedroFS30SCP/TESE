@@ -205,6 +205,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
     # Evaluation mode enabled. The running stats would not be updated.
     model.eval()
     val_meter.iter_tic()
+    loss_fun = losses.get_loss_func(cfg.MODEL.LOSS_FUNC)(reduction="mean")
 
     for cur_iter, (inputs, labels, _, meta) in enumerate(val_loader):
         if cfg.NUM_GPUS:
@@ -250,6 +251,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                 if cfg.NUM_GPUS > 1:
                     preds, labels = du.all_gather([preds, labels])
             else:
+                loss = loss_fun(preds, labels)
                 # Compute the errors.
                 num_topks_correct = metrics.topks_correct(preds, labels, (1, 5))
 
@@ -268,6 +270,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
                 val_meter.update_stats(
                     top1_err,
                     top5_err,
+                    loss.item(),
                     inputs[0].size(0)
                     * max(
                         cfg.NUM_GPUS, 1

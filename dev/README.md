@@ -166,11 +166,10 @@ cd "$DEV_ROOT/TimeSformer"
 python3 tools/prepare_dvs128_manifest.py \
   --dvs-root "$DVS_ROOT" \
   --train-list "$RAW_ROOT/trials_to_train.txt" \
+  --val-list "$RAW_ROOT/trials_to_val.txt" \
   --test-list "$RAW_ROOT/trials_to_test.txt" \
   --clip-len 8 \
   --stride 4 \
-  --val-ratio 0.2 \
-  --seed 0 \
   --path-mode rel \
   --output-dir "$GLOBAL_ROOT"
 ```
@@ -218,13 +217,14 @@ nohup python3 tools/run_net.py \
   > "$DEV_ROOT/TimeSformer/timesformer_train.log" 2>&1 &
 ```
 
-To verify the log
+Results:
 
-```bash
-ps -fu "$USER" | grep run_net.py
-tail -f "$DEV_ROOT/TimeSformer/timesformer_train.log"
-```
+Final result for EvT-OG (running evaluation on the test split after training, using the saved checkpoint):
 
-final result for Timesformer:
-test_top1_acc = 90.23%
-test_top5_acc = 99.85%
+Post-hoc test accuracy after training: 96.33 %
+Post-hoc test top-5 accuracy after training: 99.67 %
+
+Final result for Timesformer (10epochs fine-tune on the test split same split as EVT):
+
+top1_acc = 89.23
+top5_acc = 99.81

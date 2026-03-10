@@ -17,15 +17,18 @@ path_dataset_src = os.path.join(_DEV_ROOT, "datasets", "raw", "DVS128") + os.sep
 path_dataset_dst = os.path.join(_DEV_ROOT, "datasets", "evt_og", "clean_dataset") + os.sep
 
 os.makedirs(os.path.join(path_dataset_dst, "train"), exist_ok=True)
+os.makedirs(os.path.join(path_dataset_dst, "val"), exist_ok=True)
 os.makedirs(os.path.join(path_dataset_dst, "test"), exist_ok=True)
 
 
-# Pick ONE pair and comment the other.
-train_files, test_files = 'trials_to_train.txt', 'trials_to_test.txt'
-#train_files, test_files = '1s_trials_to_train.txt', '1s_trials_to_test.txt'
+# Pick ONE set and comment the other.
+train_files, val_files, test_files = 'trials_to_train.txt', 'trials_to_val.txt', 'trials_to_test.txt'
+#train_files, val_files, test_files = '1s_trials_to_train.txt', '1s_trials_to_val.txt', '1s_trials_to_test.txt'
 
 with open(os.path.join(path_dataset_src, train_files), 'r') as f:
     train_files = f.read().splitlines()
+with open(os.path.join(path_dataset_src, val_files), 'r') as f:
+    val_files = f.read().splitlines()
 with open(os.path.join(path_dataset_src, test_files), 'r') as f:
     test_files = f.read().splitlines()
 
@@ -69,4 +72,5 @@ def store_samples(events_files, mode):
 
 
 store_samples(train_files, 'train')
+store_samples(val_files, 'val')
 store_samples(test_files, 'test')

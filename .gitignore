@@ -1,23 +1,20 @@
-# Do not push original paper code to the remote repository
+# Project data and external code
 papers_code/
 datasets/
 dev/rpg_e2vid/datasets/
-# Keep TimeSformer dataset loader source code versioned.
-!dev/TimeSformer/timesformer/datasets/
-!dev/TimeSformer/timesformer/datasets/**
 
-# Virtual environment
+# Environment files
+.env
+.venv
 venv/
+.Python
 
-# Typical Python artifacts
+# Python artifacts
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 *.so
-.Python
-.env
-.venv
 *.egg-info/
 build/
 dist/
@@ -30,14 +27,18 @@ dist/
 .idea/
 .vscode/
 
-# Environment variables
-.env
-
-# TimeSformer generated artifacts (keep source/config tracked)
+# TimeSformer generated artifacts
 dev/TimeSformer/build/
 dev/TimeSformer/timesformer.egg-info/
 dev/TimeSformer/**/__pycache__/
 dev/TimeSformer/**/*.pyc
 dev/TimeSformer/checkpoints/
 dev/TimeSformer/outputs/
-dev/TimeSformer/timesformer_train.log
+dev/TimeSformer/logs/
+
+# EvT-OG generated artifacts
+dev/EvT-OG/logs/
+
+# Keep the custom TimeSformer dataset loader source versioned
+!dev/TimeSformer/timesformer/datasets/
+!dev/TimeSformer/timesformer/datasets/**

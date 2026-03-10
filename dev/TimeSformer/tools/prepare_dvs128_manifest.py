@@ -35,12 +35,6 @@ def parse_args():
         help="Sliding-window stride in frames.",
     )
     parser.add_argument(
-        "--val-ratio",
-        type=float,
-        default=0.2,
-        help="Validation split ratio.",
-    )
-    parser.add_argument(
         "--seed",
         type=int,
         default=0,
@@ -82,6 +76,18 @@ def parse_args():
         type=Path,
         default=None,
         help="Optional path to official test trial list for direct global manifest build.",
+    )
+    parser.add_argument(
+        "--val-ratio",
+        type=float,
+        default=0.2,
+        help="Validation split ratio for single-sample mode.",
+    )
+    parser.add_argument(
+        "--val-list",
+        type=Path,
+        default=None,
+        help="Optional path to explicit validation trial list for direct global manifest build.",
     )
     return parser.parse_args()
 
@@ -153,15 +159,7 @@ def load_timestamps_usec(path):
     return ts_usec
 
 
-def build_clips(
-    frame_paths,
-    ts_usec,
-    label_segments,
-    clip_len,
-    stride,
-    path_mode,
-    path_base,
-):
+def build_clips(frame_paths, ts_usec, label_segments, clip_len, stride, path_mode, path_base):
     def frame_to_str(p):
         if path_mode == "abs":
             return str(p.resolve())
@@ -215,7 +213,7 @@ def split_clips(clips, val_ratio, seed):
 def write_manifest(path, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["clip_id", "label", "frames"])
+        writer = csv.DictWriter(f, fieldnames=["clip_id", "label", "frames"], extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -286,18 +284,18 @@ def build_global_manifests(args, output_dir):
 
     for aedat_name in iter_trial_names(args.train_list):
         sample_name = aedat_name.replace(".aedat", "")
-        sample_args = argparse.Namespace(**vars(args))
-        sample_args.sample_split = "trainval"
-        _, train, val, _ = build_sample_rows(sample_args, sample_name)
-        train_rows.extend(train)
-        val_rows.extend(val)
+        _, _, _, sample_clips = build_sample_rows(argparse.Namespace(**{**vars(args), "sample_split": "test"}), sample_name)
+        train_rows.extend(sample_clips)
+
+    for aedat_name in iter_trial_names(args.val_list):
+        sample_name = aedat_name.replace(".aedat", "")
+        _, _, _, sample_clips = build_sample_rows(argparse.Namespace(**{**vars(args), "sample_split": "test"}), sample_name)
+        val_rows.extend(sample_clips)
 
     for aedat_name in iter_trial_names(args.test_list):
         sample_name = aedat_name.replace(".aedat", "")
-        sample_args = argparse.Namespace(**vars(args))
-        sample_args.sample_split = "test"
-        _, _, _, test = build_sample_rows(sample_args, sample_name)
-        test_rows.extend(test)
+        _, _, _, sample_clips = build_sample_rows(argparse.Namespace(**{**vars(args), "sample_split": "test"}), sample_name)
+        test_rows.extend(sample_clips)
 
     write_manifest(output_dir / "train.csv", train_rows)
     write_manifest(output_dir / "val.csv", val_rows)
@@ -311,9 +309,9 @@ def build_global_manifests(args, output_dir):
 
 def main():
     args = parse_args()
-    if args.train_list or args.test_list:
-        if not (args.train_list and args.test_list):
-            raise RuntimeError("Provide both --train-list and --test-list for global mode.")
+    if args.train_list or args.val_list or args.test_list:
+        if not (args.train_list and args.val_list and args.test_list):
+            raise RuntimeError("Provide --train-list, --val-list, and --test-list for global mode.")
         if args.output_dir is None:
             raise RuntimeError("Provide --output-dir for global mode.")
         build_global_manifests(args, args.output_dir)

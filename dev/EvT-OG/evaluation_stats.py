@@ -14,6 +14,7 @@ from trainer import EvNetModel
 
 device = 'cuda:0'
 #device = 'cpu'
+eval_split = 'test'
 
 
 # path_model = './pretrained_models/DVS128_10_24ms_dwn/'
@@ -49,7 +50,7 @@ def get_complexity_stats(model, all_params):
     data_params['pin_memory'] = False
     data_params['sample_repetitions'] = 1
     dm = Event_DataModule(**data_params)
-    dl = dm.val_dataloader()
+    dl = dm.test_dataloader() if eval_split == 'test' else dm.val_dataloader()
     
     # https://github.com/sovrasov/flops-counter.pytorch
     from ptflops import get_model_complexity_info
@@ -94,10 +95,10 @@ def get_time_accuracy_stats(model, all_params):
     data_params['pin_memory'] = False
     data_params['sample_repetitions'] = 1
     dm = Event_DataModule(**data_params)
-    dl = dm.val_dataloader()
+    dl = dm.test_dataloader() if eval_split == 'test' else dm.val_dataloader()
         
     total_time = []
-    y_true, y_pred = [], []
+    y_true, y_pred, y_top5 = [], [], []
     for polarity, pixels, labels in tqdm(dl):
         if polarity is None: continue
         polarity, pixels, labels = polarity.to(device), pixels.to(device), labels.to(device)
@@ -107,16 +108,19 @@ def get_time_accuracy_stats(model, all_params):
         
         y_true.append(labels[0])
         y_pred.append(clf_logits.argmax())
+        y_top5.append(torch.topk(clf_logits, k=min(5, clf_logits.shape[-1]), dim=-1).indices[0].to("cpu"))
     y_true, y_pred = torch.stack(y_true).to("cpu"), torch.stack(y_pred).to("cpu")
     acc_score = Accuracy()(y_true, y_pred).item()
+    top5_score = torch.stack([top5.eq(label).any().float() for label, top5 in zip(y_true, y_top5)]).mean().item()
     
     logs = evaluation_utils.load_csv_logs_as_df(path_model)
     train_acc = logs[~logs['val_acc'].isna()]['val_acc'].max()
+    train_acc_top5 = logs[~logs['val_acc_top5'].isna()]['val_acc_top5'].max() if 'val_acc_top5' in logs else np.nan
 
-    return np.mean(total_time)*1000, train_acc, acc_score
+    return np.mean(total_time)*1000, train_acc, train_acc_top5, acc_score, top5_score
 
 print('\n\n ** Calculating time and accuracy statistics')
-avg_time, train_acc, val_acc = get_time_accuracy_stats(model, all_params)
+avg_time, train_acc, train_acc_top5, val_acc, val_acc_top5 = get_time_accuracy_stats(model, all_params)
 
 
 # %%
@@ -125,7 +129,8 @@ print(f' - Model parameters: {param_stats["total_params"]:.2f} M | pos_encoding_
 print(f' - Model FLOPs: {flops*1e-9:.2f} G')
 print(f' - Average activated patches in [{all_params["data_params"]["dataset_name"]}]: {activated_patches:.1f}')
 print(f' - Average processing time per time-window in device [{device}]: {avg_time:.4f} ms')
-print(f' - Validation accuracy reported during training: {train_acc*100:.2f} %')
-print(f' - Validation accuracy reported after training: {val_acc*100:.2f} %')
-
-
+print(f' - Best logged val_acc during training: {train_acc*100:.2f} %')
+if not np.isnan(train_acc_top5):
+    print(f' - Best logged val_acc_top5 during training: {train_acc_top5*100:.2f} %')
+print(f' - Post-hoc {eval_split} accuracy after training: {val_acc*100:.2f} %')
+print(f' - Post-hoc {eval_split} top-5 accuracy after training: {val_acc_top5*100:.2f} %')
