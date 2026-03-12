@@ -1,4 +1,4 @@
-# TESE Pipeline (EvT-OG vs TimeSformer on DVS128): Setup Runbook
+# Pipeline (EvT-OG vs TimeSformer on DVS128): Setup Runbook
 
 This is the personal end-to-end setup used in this project:
 1. Evaluate EvT-OG pretrained models.
