@@ -1,4 +1,5 @@
-# Dev Setup Runbook
+# TESE Pipeline (EvT-OG vs TimeSformer on DVS128): Setup Runbook
+
 This is the personal end-to-end setup used in this project:
 1. Evaluate EvT-OG pretrained models.
 2. Convert full DVS128 AEDAT dataset to PNGs with `rpg_e2vid`.
