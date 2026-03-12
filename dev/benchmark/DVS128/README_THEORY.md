@@ -1,4 +1,4 @@
-# TESE Pipeline (EvT-OG vs TimeSformer on DVS128): Simple File-by-File Explanation
+# Pipeline (EvT-OG vs TimeSformer on DVS128): Simple File-by-File Explanation
 
 This document explains the files I run in this project:
 - what each file does,
