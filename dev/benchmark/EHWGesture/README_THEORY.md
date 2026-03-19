@@ -1,0 +1,1 @@
+# Pipeline (EvT-OG vs TimeSformer on EHWGesture): Simple File-by-File Explanation
