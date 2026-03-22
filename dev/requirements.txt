@@ -42,3 +42,8 @@ ptflops==0.6.6
 aermanager==0.3.0
 sparse==0.12.0
 scikit-image==0.19.3
+
+# Additional repo imports
+Pillow==9.5.0
+joblib==1.3.2
+submitit==1.5.2
