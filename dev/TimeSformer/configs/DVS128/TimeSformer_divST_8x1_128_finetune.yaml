@@ -7,6 +7,12 @@ TRAIN:
   AUTO_RESUME: False
   FINETUNE: True
   CHECKPOINT_FILE_PATH: ''
+  EARLY_STOPPING:
+    ENABLE: True
+    MONITOR: top1_err
+    MODE: min
+    MIN_DELTA: 0.1
+    PATIENCE: 8
 
 DATA:
   PATH_TO_DATA_DIR: ../datasets/timesformer/DVS128/manifests/all_samples_8f
@@ -28,7 +34,7 @@ TIMESFORMER:
 SOLVER:
   BASE_LR: 0.0005
   LR_POLICY: cosine
-  MAX_EPOCH: 10
+  MAX_EPOCH: 50
   MOMENTUM: 0.9
   WEIGHT_DECAY: 1e-4
   WARMUP_EPOCHS: 1.0
@@ -51,10 +57,10 @@ TEST:
   CHECKPOINT_FILE_PATH: ''
 
 DATA_LOADER:
-  NUM_WORKERS: 2
-  PIN_MEMORY: True
+  NUM_WORKERS: 0
+  PIN_MEMORY: False
 
 NUM_GPUS: 1
 NUM_SHARDS: 1
 RNG_SEED: 0
-OUTPUT_DIR: outputs/dvs128_all_samples_finetune
+OUTPUT_DIR: outputs/dvs128_all_samples_finetune_earlystop

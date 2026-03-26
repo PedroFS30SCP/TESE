@@ -54,6 +54,16 @@ def get_path_to_checkpoint(path_to_job, epoch):
     return os.path.join(get_checkpoint_dir(path_to_job), name)
 
 
+def get_named_checkpoint(path_to_job, checkpoint_name):
+    """
+    Get the full path to a named checkpoint file inside the checkpoint folder.
+    Args:
+        path_to_job (string): the path to the folder of the current job.
+        checkpoint_name (string): checkpoint filename.
+    """
+    return os.path.join(get_checkpoint_dir(path_to_job), checkpoint_name)
+
+
 def get_last_checkpoint(path_to_job):
     """
     Get the last checkpoint from the checkpointing folder.
@@ -104,7 +114,9 @@ def is_checkpoint_epoch(cfg, cur_epoch, multigrid_schedule=None):
     return (cur_epoch + 1) % cfg.TRAIN.CHECKPOINT_PERIOD == 0
 
 
-def save_checkpoint(path_to_job, model, optimizer, epoch, cfg):
+def save_checkpoint(
+    path_to_job, model, optimizer, epoch, cfg, checkpoint_name=None
+):
     """
     Save a checkpoint.
     Args:
@@ -130,7 +142,11 @@ def save_checkpoint(path_to_job, model, optimizer, epoch, cfg):
         "cfg": cfg.dump(),
     }
     # Write the checkpoint.
-    path_to_checkpoint = get_path_to_checkpoint(path_to_job, epoch + 1)
+    path_to_checkpoint = (
+        get_named_checkpoint(path_to_job, checkpoint_name)
+        if checkpoint_name
+        else get_path_to_checkpoint(path_to_job, epoch + 1)
+    )
     with PathManager.open(path_to_checkpoint, "wb") as f:
         torch.save(checkpoint, f)
     return path_to_checkpoint
@@ -518,6 +534,12 @@ def load_test_checkpoint(cfg, model):
             None,
             inflation=False,
             convert_from_caffe2=cfg.TEST.CHECKPOINT_TYPE == "caffe2",
+        )
+    elif PathManager.exists(get_named_checkpoint(cfg.OUTPUT_DIR, "checkpoint_best.pyth")):
+        load_checkpoint(
+            get_named_checkpoint(cfg.OUTPUT_DIR, "checkpoint_best.pyth"),
+            model,
+            cfg.NUM_GPUS > 1,
         )
     elif has_checkpoint(cfg.OUTPUT_DIR):
         last_checkpoint = get_last_checkpoint(cfg.OUTPUT_DIR)

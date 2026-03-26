@@ -199,6 +199,18 @@ python3 tools/run_net.py \
   NUM_GPUS 1
 ```
 
+This config now writes the new early-stopping run to:
+
+```bash
+$DEV_ROOT/TimeSformer/outputs/dvs128_all_samples_finetune_earlystop
+```
+
+Important saved artifacts:
+- `stdout.log` with all train/val epoch metrics used by the benchmark plots
+- `checkpoints/checkpoint_best.pyth`
+- `checkpoints/checkpoint_last.pyth`
+- `training_state.json`
+
 ## Notes
 - Keep `git` for code and `rsync` for large data/checkpoints when moving machines.
 - The 1-epoch CPU run is only a pipeline sanity check, not final performance.
@@ -214,8 +226,7 @@ cd "$DEV_ROOT/TimeSformer"
 nohup python3 tools/run_net.py \
   --cfg configs/DVS128/TimeSformer_divST_8x1_128_finetune.yaml \
   TRAIN.CHECKPOINT_FILE_PATH "$DEV_ROOT/TimeSformer/checkpoints/TimeSformer_divST_8_224_SSv2.pyth" \
-  NUM_GPUS 1 \
-  > "$DEV_ROOT/TimeSformer/timesformer_train.log" 2>&1 &
+  NUM_GPUS 1 &
 ```
 
 Results:

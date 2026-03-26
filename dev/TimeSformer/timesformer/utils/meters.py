@@ -577,6 +577,7 @@ class ValMeter(object):
             stats[key] = self.extra_stats_total[key] / self.num_samples
 
         logging.log_json_stats(stats)
+        return stats
 
 
 def get_map(preds, labels):

@@ -56,6 +56,24 @@ _C.TRAIN.EVAL_PERIOD = 10
 # Save model checkpoint every checkpoint period epochs.
 _C.TRAIN.CHECKPOINT_PERIOD = 10
 
+# Early stopping options.
+_C.TRAIN.EARLY_STOPPING = CfgNode()
+
+# If True, stop training when the monitored validation metric stalls.
+_C.TRAIN.EARLY_STOPPING.ENABLE = False
+
+# Validation metric from val_epoch logs to monitor.
+_C.TRAIN.EARLY_STOPPING.MONITOR = "top1_err"
+
+# Whether lower ("min") or higher ("max") is better for the monitored metric.
+_C.TRAIN.EARLY_STOPPING.MODE = "min"
+
+# Minimum metric improvement required to reset patience.
+_C.TRAIN.EARLY_STOPPING.MIN_DELTA = 0.0
+
+# Number of evaluated epochs to wait before stopping.
+_C.TRAIN.EARLY_STOPPING.PATIENCE = 10
+
 # Resume training from the latest checkpoint in the output directory.
 _C.TRAIN.AUTO_RESUME = True
 

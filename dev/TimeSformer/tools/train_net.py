@@ -2,7 +2,9 @@
 
 """Train a video classification model."""
 
+import json
 import numpy as np
+import os
 import pprint
 import torch
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
@@ -24,6 +26,22 @@ from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
 logger = logging.get_logger(__name__)
+
+
+def _is_better_metric(cur_value, best_value, mode, min_delta):
+    if best_value is None:
+        return True
+    if mode == "min":
+        return cur_value < (best_value - min_delta)
+    if mode == "max":
+        return cur_value > (best_value + min_delta)
+    raise ValueError("Unsupported early stopping mode '{}'".format(mode))
+
+
+def _write_training_state(output_dir, state):
+    state_path = os.path.join(output_dir, "training_state.json")
+    with open(state_path, "w") as f:
+        json.dump(state, f, indent=2, sort_keys=True)
 
 
 def train_epoch(
@@ -289,7 +307,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
         val_meter.iter_tic()
 
     # Log epoch stats.
-    val_meter.log_epoch_stats(cur_epoch)
+    stats = val_meter.log_epoch_stats(cur_epoch)
     # write to tensorboard format if available.
     if writer is not None:
         if cfg.DETECTION.ENABLE:
@@ -309,6 +327,7 @@ def eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer=None):
             )
 
     val_meter.reset()
+    return stats
 
 
 def calculate_and_update_precise_bn(loader, model, num_iters=200, use_gpu=True):
@@ -448,6 +467,13 @@ def train(cfg):
     # Perform the training loop.
     logger.info("Start epoch: {}".format(start_epoch + 1))
 
+    es_cfg = cfg.TRAIN.EARLY_STOPPING
+    early_stopping_enabled = es_cfg.ENABLE
+    best_metric = None
+    best_epoch = None
+    best_stats = None
+    epochs_without_improvement = 0
+
     for cur_epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCH):
         if cfg.MULTIGRID.LONG_CYCLE:
             cfg, changed = multigrid.update_long_cycle(cfg, cur_epoch)
@@ -504,12 +530,87 @@ def train(cfg):
             )
         _ = misc.aggregate_sub_bn_stats(model)
 
-        # Save a checkpoint.
-        if is_checkp_epoch:
-            cu.save_checkpoint(cfg.OUTPUT_DIR, model, optimizer, cur_epoch, cfg)
+        # Save an epoch checkpoint when scheduled and always refresh the last checkpoint.
+        cu.save_checkpoint(
+            cfg.OUTPUT_DIR,
+            model,
+            optimizer,
+            cur_epoch,
+            cfg,
+            checkpoint_name="checkpoint_last.pyth",
+        )
         # Evaluate the model on validation set.
+        val_stats = None
         if is_eval_epoch:
-            eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
+            val_stats = eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
+
+            if early_stopping_enabled:
+                monitor_name = es_cfg.MONITOR
+                if monitor_name not in val_stats:
+                    raise KeyError(
+                        "Early stopping monitor '{}' not found in val stats: {}".format(
+                            monitor_name, sorted(val_stats.keys())
+                        )
+                    )
+
+                current_metric = float(val_stats[monitor_name])
+                if _is_better_metric(
+                    current_metric,
+                    best_metric,
+                    es_cfg.MODE,
+                    es_cfg.MIN_DELTA,
+                ):
+                    best_metric = current_metric
+                    best_epoch = cur_epoch + 1
+                    best_stats = {k: float(v) if isinstance(v, (int, float, np.floating)) else v for k, v in val_stats.items()}
+                    epochs_without_improvement = 0
+                    cu.save_checkpoint(
+                        cfg.OUTPUT_DIR,
+                        model,
+                        optimizer,
+                        cur_epoch,
+                        cfg,
+                        checkpoint_name="checkpoint_best.pyth",
+                    )
+                    logger.info(
+                        "New best checkpoint at epoch {} with {}={:.5f}".format(
+                            best_epoch, monitor_name, current_metric
+                        )
+                    )
+                else:
+                    epochs_without_improvement += 1
+
+                _write_training_state(
+                    cfg.OUTPUT_DIR,
+                    {
+                        "best_checkpoint": os.path.join(
+                            cfg.OUTPUT_DIR, "checkpoints", "checkpoint_best.pyth"
+                        ),
+                        "last_checkpoint": os.path.join(
+                            cfg.OUTPUT_DIR, "checkpoints", "checkpoint_last.pyth"
+                        ),
+                        "best_epoch": best_epoch,
+                        "best_metric": best_metric,
+                        "epochs_without_improvement": epochs_without_improvement,
+                        "monitor": monitor_name,
+                        "mode": es_cfg.MODE,
+                        "min_delta": es_cfg.MIN_DELTA,
+                        "patience": es_cfg.PATIENCE,
+                        "best_val_stats": best_stats,
+                    },
+                )
+
+                if epochs_without_improvement >= es_cfg.PATIENCE:
+                    logger.info(
+                        "Early stopping triggered at epoch {} after {} stale eval epochs. Best epoch was {} ({}={:.5f}).".format(
+                            cur_epoch + 1,
+                            epochs_without_improvement,
+                            best_epoch,
+                            monitor_name,
+                            best_metric,
+                        )
+                    )
+                    break
 
     if writer is not None:
         writer.close()
