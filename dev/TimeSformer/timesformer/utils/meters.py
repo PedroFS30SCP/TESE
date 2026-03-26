@@ -405,6 +405,7 @@ class TrainMeter(object):
         for key in self.extra_stats.keys():
             stats[key] = self.extra_stats_total[key] / self.num_samples
         logging.log_json_stats(stats)
+        return stats
 
 
 class ValMeter(object):

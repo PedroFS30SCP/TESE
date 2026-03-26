@@ -74,6 +74,27 @@ _C.TRAIN.EARLY_STOPPING.MIN_DELTA = 0.0
 # Number of evaluated epochs to wait before stopping.
 _C.TRAIN.EARLY_STOPPING.PATIENCE = 10
 
+# ---------------------------------------------------------------------------- #
+# ntfy options.
+# ---------------------------------------------------------------------------- #
+_C.NTFY = CfgNode()
+
+# If True, send ntfy.sh notifications from the master process.
+_C.NTFY.ENABLE = False
+
+# ntfy topic name. Example: "my_training_topic".
+_C.NTFY.TOPIC = ""
+
+# Seconds to wait before giving up on a send attempt.
+_C.NTFY.TIMEOUT_SEC = 3.0
+
+# Send an update every N epochs. Set to 0 to disable periodic updates.
+_C.NTFY.EVERY_N_EPOCHS = 5
+
+# Overfitting heuristic: alert if val loss rises by at least this amount above
+# the best seen val loss while train loss also improves.
+_C.NTFY.OVERFIT_VAL_LOSS_DELTA = 0.05
+
 # Resume training from the latest checkpoint in the output directory.
 _C.TRAIN.AUTO_RESUME = True
 

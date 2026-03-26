@@ -6,7 +6,10 @@ import json
 import numpy as np
 import os
 import pprint
+import threading
+import time
 import torch
+import urllib.request
 from fvcore.nn.precise_bn import get_bn_modules, update_bn_stats
 
 import timesformer.models.losses as losses
@@ -26,6 +29,89 @@ from timm.data import Mixup
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
 
 logger = logging.get_logger(__name__)
+
+
+def _safe_float(value, default=None):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_pct_from_err(err_value):
+    err = _safe_float(err_value)
+    if err is None:
+        return "n/a"
+    return "{:.1f}%".format(100.0 - err)
+
+
+def _format_loss(loss_value):
+    loss = _safe_float(loss_value)
+    if loss is None:
+        return "n/a"
+    return "{:.3f}".format(loss)
+
+
+def _format_hours_minutes(total_seconds):
+    total_seconds = max(0, int(total_seconds))
+    hours, rem = divmod(total_seconds, 3600)
+    minutes, _ = divmod(rem, 60)
+    if hours > 0:
+        return "{}h {:02d}min".format(hours, minutes)
+    return "{}min".format(minutes)
+
+
+def _format_eta_text(eta_value):
+    if not eta_value:
+        return "n/a"
+    parts = str(eta_value).split(":")
+    if len(parts) != 3:
+        return str(eta_value)
+    hours = int(parts[0])
+    minutes = int(parts[1])
+    if hours > 0:
+        return "{}h {:02d}min".format(hours, minutes)
+    return "{}min".format(minutes)
+
+
+def _ntfy_enabled(cfg):
+    return (
+        du.is_master_proc()
+        and getattr(cfg.NTFY, "ENABLE", False)
+        and bool(getattr(cfg.NTFY, "TOPIC", "").strip())
+    )
+
+
+def _send_ntfy(cfg, title, message, priority="default", tags=None):
+    if not _ntfy_enabled(cfg):
+        return
+
+    topic = cfg.NTFY.TOPIC.strip()
+    timeout = float(cfg.NTFY.TIMEOUT_SEC)
+    body = message.encode("utf-8", errors="replace")
+    headers = {
+        "Title": title[:80],
+        "Priority": priority,
+        "Content-Type": "text/plain; charset=utf-8",
+    }
+    if tags:
+        headers["Tags"] = ",".join(tags)
+
+    def _worker():
+        try:
+            req = urllib.request.Request(
+                "https://ntfy.sh/{}".format(topic),
+                data=body,
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=timeout):
+                pass
+        except Exception:
+            # Notifications must never interfere with training.
+            pass
+
+    threading.Thread(target=_worker, daemon=True).start()
 
 
 def _is_better_metric(cur_value, best_value, mode, min_delta):
@@ -201,8 +287,9 @@ def train_epoch(
         train_meter.iter_tic()
 
     # Log epoch stats.
-    train_meter.log_epoch_stats(cur_epoch)
+    stats = train_meter.log_epoch_stats(cur_epoch)
     train_meter.reset()
+    return stats
 
 
 @torch.no_grad()
@@ -410,6 +497,7 @@ def train(cfg):
     """
     # Set up environment.
     du.init_distributed_training(cfg)
+    train_start_time = time.perf_counter()
     # Set random seed from configs.
     np.random.seed(cfg.RNG_SEED)
     torch.manual_seed(cfg.RNG_SEED)
@@ -466,6 +554,15 @@ def train(cfg):
 
     # Perform the training loop.
     logger.info("Start epoch: {}".format(start_epoch + 1))
+    _send_ntfy(
+        cfg,
+        "Training started!",
+        "Training started!\nEpochs: {} | LR: {:.6f}".format(
+            cfg.SOLVER.MAX_EPOCH, float(cfg.SOLVER.BASE_LR)
+        ),
+        priority="default",
+        tags=["rocket", "computer"],
+    )
 
     es_cfg = cfg.TRAIN.EARLY_STOPPING
     early_stopping_enabled = es_cfg.ENABLE
@@ -473,144 +570,256 @@ def train(cfg):
     best_epoch = None
     best_stats = None
     epochs_without_improvement = 0
+    best_val_loss = None
+    best_val_acc = None
+    best_val_acc_epoch = None
+    best_val_loss_epoch = None
+    overfit_alert_active = False
+    prev_train_loss = None
 
-    for cur_epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCH):
-        if cfg.MULTIGRID.LONG_CYCLE:
-            cfg, changed = multigrid.update_long_cycle(cfg, cur_epoch)
-            if changed:
-                (
-                    model,
-                    optimizer,
-                    train_loader,
-                    val_loader,
-                    precise_bn_loader,
-                    train_meter,
-                    val_meter,
-                ) = build_trainer(cfg)
-
-                # Load checkpoint.
-                if cu.has_checkpoint(cfg.OUTPUT_DIR):
-                    last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
-                    assert "{:05d}.pyth".format(cur_epoch) in last_checkpoint
-                else:
-                    last_checkpoint = cfg.TRAIN.CHECKPOINT_FILE_PATH
-                logger.info("Load from {}".format(last_checkpoint))
-                cu.load_checkpoint(
-                    last_checkpoint, model, cfg.NUM_GPUS > 1, optimizer
-                )
-
-        # Shuffle the dataset.
-        loader.shuffle_dataset(train_loader, cur_epoch)
-
-        # Train for one epoch.
-        train_epoch(
-            train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer
-        )
-
-        is_checkp_epoch = cu.is_checkpoint_epoch(
-            cfg,
-            cur_epoch,
-            None if multigrid is None else multigrid.schedule,
-        )
-        is_eval_epoch = misc.is_eval_epoch(
-            cfg, cur_epoch, None if multigrid is None else multigrid.schedule
-        )
-
-        # Compute precise BN stats.
-        if (
-            (is_checkp_epoch or is_eval_epoch)
-            and cfg.BN.USE_PRECISE_STATS
-            and len(get_bn_modules(model)) > 0
-        ):
-            calculate_and_update_precise_bn(
-                precise_bn_loader,
-                model,
-                min(cfg.BN.NUM_BATCHES_PRECISE, len(precise_bn_loader)),
-                cfg.NUM_GPUS > 0,
-            )
-        _ = misc.aggregate_sub_bn_stats(model)
-
-        # Save an epoch checkpoint when scheduled and always refresh the last checkpoint.
-        cu.save_checkpoint(
-            cfg.OUTPUT_DIR,
-            model,
-            optimizer,
-            cur_epoch,
-            cfg,
-            checkpoint_name="checkpoint_last.pyth",
-        )
-        # Evaluate the model on validation set.
-        val_stats = None
-        if is_eval_epoch:
-            val_stats = eval_epoch(val_loader, model, val_meter, cur_epoch, cfg, writer)
-
-            if early_stopping_enabled:
-                monitor_name = es_cfg.MONITOR
-                if monitor_name not in val_stats:
-                    raise KeyError(
-                        "Early stopping monitor '{}' not found in val stats: {}".format(
-                            monitor_name, sorted(val_stats.keys())
-                        )
-                    )
-
-                current_metric = float(val_stats[monitor_name])
-                if _is_better_metric(
-                    current_metric,
-                    best_metric,
-                    es_cfg.MODE,
-                    es_cfg.MIN_DELTA,
-                ):
-                    best_metric = current_metric
-                    best_epoch = cur_epoch + 1
-                    best_stats = {k: float(v) if isinstance(v, (int, float, np.floating)) else v for k, v in val_stats.items()}
-                    epochs_without_improvement = 0
-                    cu.save_checkpoint(
-                        cfg.OUTPUT_DIR,
+    try:
+        for cur_epoch in range(start_epoch, cfg.SOLVER.MAX_EPOCH):
+            if cfg.MULTIGRID.LONG_CYCLE:
+                cfg, changed = multigrid.update_long_cycle(cfg, cur_epoch)
+                if changed:
+                    (
                         model,
                         optimizer,
-                        cur_epoch,
-                        cfg,
-                        checkpoint_name="checkpoint_best.pyth",
-                    )
-                    logger.info(
-                        "New best checkpoint at epoch {} with {}={:.5f}".format(
-                            best_epoch, monitor_name, current_metric
-                        )
-                    )
-                else:
-                    epochs_without_improvement += 1
+                        train_loader,
+                        val_loader,
+                        precise_bn_loader,
+                        train_meter,
+                        val_meter,
+                    ) = build_trainer(cfg)
 
-                _write_training_state(
-                    cfg.OUTPUT_DIR,
-                    {
-                        "best_checkpoint": os.path.join(
-                            cfg.OUTPUT_DIR, "checkpoints", "checkpoint_best.pyth"
-                        ),
-                        "last_checkpoint": os.path.join(
-                            cfg.OUTPUT_DIR, "checkpoints", "checkpoint_last.pyth"
-                        ),
-                        "best_epoch": best_epoch,
-                        "best_metric": best_metric,
-                        "epochs_without_improvement": epochs_without_improvement,
-                        "monitor": monitor_name,
-                        "mode": es_cfg.MODE,
-                        "min_delta": es_cfg.MIN_DELTA,
-                        "patience": es_cfg.PATIENCE,
-                        "best_val_stats": best_stats,
-                    },
+                    # Load checkpoint.
+                    if cu.has_checkpoint(cfg.OUTPUT_DIR):
+                        last_checkpoint = cu.get_last_checkpoint(cfg.OUTPUT_DIR)
+                        assert "{:05d}.pyth".format(cur_epoch) in last_checkpoint
+                    else:
+                        last_checkpoint = cfg.TRAIN.CHECKPOINT_FILE_PATH
+                    logger.info("Load from {}".format(last_checkpoint))
+                    cu.load_checkpoint(
+                        last_checkpoint, model, cfg.NUM_GPUS > 1, optimizer
+                    )
+
+            # Shuffle the dataset.
+            loader.shuffle_dataset(train_loader, cur_epoch)
+
+            # Train for one epoch.
+            train_stats = train_epoch(
+                train_loader, model, optimizer, train_meter, cur_epoch, cfg, writer
+            )
+
+            is_checkp_epoch = cu.is_checkpoint_epoch(
+                cfg,
+                cur_epoch,
+                None if multigrid is None else multigrid.schedule,
+            )
+            is_eval_epoch = misc.is_eval_epoch(
+                cfg, cur_epoch, None if multigrid is None else multigrid.schedule
+            )
+
+            # Compute precise BN stats.
+            if (
+                (is_checkp_epoch or is_eval_epoch)
+                and cfg.BN.USE_PRECISE_STATS
+                and len(get_bn_modules(model)) > 0
+            ):
+                calculate_and_update_precise_bn(
+                    precise_bn_loader,
+                    model,
+                    min(cfg.BN.NUM_BATCHES_PRECISE, len(precise_bn_loader)),
+                    cfg.NUM_GPUS > 0,
+                )
+            _ = misc.aggregate_sub_bn_stats(model)
+
+            # Save an epoch checkpoint when scheduled and always refresh the last checkpoint.
+            cu.save_checkpoint(
+                cfg.OUTPUT_DIR,
+                model,
+                optimizer,
+                cur_epoch,
+                cfg,
+                checkpoint_name="checkpoint_last.pyth",
+            )
+            # Evaluate the model on validation set.
+            val_stats = None
+            if is_eval_epoch:
+                val_stats = eval_epoch(
+                    val_loader, model, val_meter, cur_epoch, cfg, writer
                 )
 
-                if epochs_without_improvement >= es_cfg.PATIENCE:
-                    logger.info(
-                        "Early stopping triggered at epoch {} after {} stale eval epochs. Best epoch was {} ({}={:.5f}).".format(
-                            cur_epoch + 1,
-                            epochs_without_improvement,
-                            best_epoch,
-                            monitor_name,
-                            best_metric,
-                        )
-                    )
-                    break
+                val_loss = _safe_float(val_stats.get("loss"))
+                val_acc = _safe_float(100.0 - float(val_stats["top1_err"])) if "top1_err" in val_stats else None
+                train_loss = _safe_float(train_stats.get("loss"))
 
-    if writer is not None:
-        writer.close()
+                if val_loss is not None and (
+                    best_val_loss is None or val_loss < best_val_loss
+                ):
+                    best_val_loss = val_loss
+                    best_val_loss_epoch = cur_epoch + 1
+                    overfit_alert_active = False
+                if val_acc is not None and (
+                    best_val_acc is None or val_acc > best_val_acc
+                ):
+                    best_val_acc = val_acc
+                    best_val_acc_epoch = cur_epoch + 1
+
+                every_n_epochs = int(cfg.NTFY.EVERY_N_EPOCHS)
+                if every_n_epochs > 0 and (cur_epoch + 1) % every_n_epochs == 0:
+                    _send_ntfy(
+                        cfg,
+                        "Epoch {}/{}".format(cur_epoch + 1, cfg.SOLVER.MAX_EPOCH),
+                        "Epoch {}/{}\n"
+                        "Train Loss: {} | Val Loss: {}\n"
+                        "Train Acc: {} | Val Acc: {}\n"
+                        "ETA: {}".format(
+                            cur_epoch + 1,
+                            cfg.SOLVER.MAX_EPOCH,
+                            _format_loss(train_stats.get("loss")),
+                            _format_loss(val_stats.get("loss")),
+                            _format_pct_from_err(train_stats.get("top1_err")),
+                            _format_pct_from_err(val_stats.get("top1_err")),
+                            _format_eta_text(train_stats.get("eta")),
+                        ),
+                        priority="default",
+                        tags=["chart_with_upwards_trend"],
+                    )
+
+                if (
+                    best_val_loss is not None
+                    and val_loss is not None
+                    and train_loss is not None
+                    and prev_train_loss is not None
+                    and val_loss >= best_val_loss + float(cfg.NTFY.OVERFIT_VAL_LOSS_DELTA)
+                    and train_loss < prev_train_loss
+                    and not overfit_alert_active
+                ):
+                    _send_ntfy(
+                        cfg,
+                        "Possible overfitting detected!",
+                        "Possible overfitting at epoch {}!\n"
+                        "Train Loss: {} | Val Loss: {}".format(
+                            cur_epoch + 1,
+                            _format_loss(train_loss),
+                            _format_loss(val_loss),
+                        ),
+                        priority="high",
+                        tags=["warning"],
+                    )
+                    overfit_alert_active = True
+
+                prev_train_loss = train_loss
+
+                if early_stopping_enabled:
+                    monitor_name = es_cfg.MONITOR
+                    if monitor_name not in val_stats:
+                        raise KeyError(
+                            "Early stopping monitor '{}' not found in val stats: {}".format(
+                                monitor_name, sorted(val_stats.keys())
+                            )
+                        )
+
+                    current_metric = float(val_stats[monitor_name])
+                    if _is_better_metric(
+                        current_metric,
+                        best_metric,
+                        es_cfg.MODE,
+                        es_cfg.MIN_DELTA,
+                    ):
+                        best_metric = current_metric
+                        best_epoch = cur_epoch + 1
+                        best_stats = {k: float(v) if isinstance(v, (int, float, np.floating)) else v for k, v in val_stats.items()}
+                        epochs_without_improvement = 0
+                        cu.save_checkpoint(
+                            cfg.OUTPUT_DIR,
+                            model,
+                            optimizer,
+                            cur_epoch,
+                            cfg,
+                            checkpoint_name="checkpoint_best.pyth",
+                        )
+                        logger.info(
+                            "New best checkpoint at epoch {} with {}={:.5f}".format(
+                                best_epoch, monitor_name, current_metric
+                            )
+                        )
+                    else:
+                        epochs_without_improvement += 1
+
+                    _write_training_state(
+                        cfg.OUTPUT_DIR,
+                        {
+                            "best_checkpoint": os.path.join(
+                                cfg.OUTPUT_DIR, "checkpoints", "checkpoint_best.pyth"
+                            ),
+                            "last_checkpoint": os.path.join(
+                                cfg.OUTPUT_DIR, "checkpoints", "checkpoint_last.pyth"
+                            ),
+                            "best_epoch": best_epoch,
+                            "best_metric": best_metric,
+                            "epochs_without_improvement": epochs_without_improvement,
+                            "monitor": monitor_name,
+                            "mode": es_cfg.MODE,
+                            "min_delta": es_cfg.MIN_DELTA,
+                            "patience": es_cfg.PATIENCE,
+                            "best_val_stats": best_stats,
+                        },
+                    )
+
+                    if epochs_without_improvement >= es_cfg.PATIENCE:
+                        logger.info(
+                            "Early stopping triggered at epoch {} after {} stale eval epochs. Best epoch was {} ({}={:.5f}).".format(
+                                cur_epoch + 1,
+                                epochs_without_improvement,
+                                best_epoch,
+                                monitor_name,
+                                best_metric,
+                            )
+                        )
+                        break
+
+        total_time = _format_hours_minutes(time.perf_counter() - train_start_time)
+        _send_ntfy(
+            cfg,
+            "Training complete!",
+            "Training complete! Total time: {}\n"
+            "Best Val Acc: {} at epoch {}\n"
+            "Best Val Loss: {} at epoch {}".format(
+                total_time,
+                "n/a" if best_val_acc is None else "{:.1f}%".format(best_val_acc),
+                "n/a" if best_val_acc_epoch is None else best_val_acc_epoch,
+                "n/a" if best_val_loss is None else "{:.3f}".format(best_val_loss),
+                "n/a" if best_val_loss_epoch is None else best_val_loss_epoch,
+            ),
+            priority="default",
+            tags=["white_check_mark", "tada"],
+        )
+    except KeyboardInterrupt:
+        _send_ntfy(
+            cfg,
+            "Training interrupted!",
+            "Training interrupted at epoch {}!".format(
+                cur_epoch + 1 if "cur_epoch" in locals() else start_epoch + 1
+            ),
+            priority="high",
+            tags=["warning", "hand"],
+        )
+        raise
+    except Exception as exc:
+        error_text = "{}: {}".format(type(exc).__name__, str(exc)).strip()
+        _send_ntfy(
+            cfg,
+            "Training crashed!",
+            "Training crashed at epoch {}!\nError: {}".format(
+                cur_epoch + 1 if "cur_epoch" in locals() else start_epoch + 1,
+                error_text[:300],
+            ),
+            priority="urgent",
+            tags=["rotating_light", "warning"],
+        )
+        raise
+    finally:
+        if writer is not None:
+            writer.close()
