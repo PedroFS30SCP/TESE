@@ -141,6 +141,11 @@ My pipeline has 3 stages:
 - Status: **Created by me (custom config)**.
 - Run type: used indirectly.
 - Called by: `dev/TimeSformer/tools/run_net.py`.
+- My current setup also:
+  - enables early stopping on validation `top1_err`
+  - uses `checkpoint_best.pyth` and `checkpoint_last.pyth`
+  - writes the new run to `outputs/dvs128_all_samples_finetune_earlystop`
+  - uses conservative dataloader settings (`NUM_WORKERS: 0`, `PIN_MEMORY: False`) to reduce risk on shared servers
 
 ### `dev/TimeSformer/tools/run_net.py`
 - What it does: main TimeSformer train/val/test entrypoint.
@@ -177,6 +182,10 @@ My pipeline has 3 stages:
 - My changes:
   - added validation-loss computation during `eval_epoch`.
   - passed validation loss into the validation meter so it gets logged.
+  - added early stopping based on validation metrics.
+  - added saving of `checkpoint_best.pyth` and `checkpoint_last.pyth`.
+  - added `training_state.json` summary writing for the selected best checkpoint.
+  - added optional `ntfy.sh` notifications for periodic updates, possible overfitting warnings, training completion, interruption, and crashes.
 
 ### `dev/TimeSformer/timesformer/utils/meters.py`
 - What it does: tracks and logs TimeSformer training/validation metrics.
@@ -187,6 +196,26 @@ My pipeline has 3 stages:
 - My changes:
   - extended `ValMeter` to accumulate validation loss.
   - added validation loss to per-iteration and per-epoch logs.
+
+### `dev/TimeSformer/timesformer/utils/checkpoint.py`
+- What it does: handles checkpoint saving and loading.
+- Why modified: the final thesis run needs stable named checkpoints instead of keeping every epoch checkpoint.
+- Status: **Original file, modified**.
+- Run type: executed indirectly.
+- Called by: `dev/TimeSformer/tools/train_net.py` and `dev/TimeSformer/tools/test_net.py`.
+- My changes:
+  - added support for named checkpoints such as `checkpoint_best.pyth` and `checkpoint_last.pyth`.
+  - made test-time loading prefer `checkpoint_best.pyth` when it exists.
+
+### `dev/TimeSformer/timesformer/config/defaults.py`
+- What it does: defines default configuration values for TimeSformer.
+- Why modified: early stopping and notification behavior needed config-level control instead of hardcoded values.
+- Status: **Original file, modified**.
+- Run type: executed indirectly.
+- Called by: `dev/TimeSformer/tools/run_net.py`.
+- My changes:
+  - added `TRAIN.EARLY_STOPPING` config options (`ENABLE`, `MONITOR`, `MODE`, `MIN_DELTA`, `PATIENCE`).
+  - added `NTFY` config options for optional training notifications.
 
 ### `dev/TimeSformer/timesformer/datasets/video_container.py`
 - What it does: video decoding helper for video-file datasets.
@@ -216,11 +245,15 @@ My pipeline has 3 stages:
 
 ## 6) Benchmark Output
 
-### `dev/benchmark/DVS128/evt_vs_tsformer.ipynb`
+### `dev/benchmark/DVS128/evt_vs_tsformer_dvs.ipynb`
 - What it does: benchmark notebook comparing EvT-OG and TimeSformer on DVS128.
 - Why: centralizes accuracy, confusion matrices, timing, memory, and curve analysis in one place.
 - Status: **Created by me (custom)**.
 - Run type: run directly.
+- The setup:
+  - points to the new TimeSformer output folder `dvs128_all_samples_finetune_earlystop`.
+  - prefers `checkpoint_best.pyth` for post-hoc TimeSformer evaluation.
+  - falls back to `checkpoint_last.pyth` if the best checkpoint is missing.
 
 ---
 

@@ -240,3 +240,8 @@ Final result for Timesformer (10epochs fine-tune on the test split same split as
 
 top1_acc = 89.23
 top5_acc = 99.81
+
+Final result for TimeSformer (trained 29 epochs total, stopped by early stopping, evaluated on the same test split as EvT):
+
+top1_acc = 92.21
+top5_acc = 99.94
