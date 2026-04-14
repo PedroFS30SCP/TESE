@@ -12,12 +12,12 @@ Use one Python environment and activate it before running anything:
 
 ```bash
 # Load project paths (recommended)
-source "$HOME/TESE/dev/env.sh"
+source "$HOME/TESE/dev/dvs_env.sh"
 ```
 
 ```bash
 conda activate tese_py37
-pip install -r /home/ppfsa/TESE/dev/requirements.txt
+pip install -r /home/ppfsa/TESE/dev/dvs_requirements.txt
 ```
 
 # Confirm GPU is visible: 
