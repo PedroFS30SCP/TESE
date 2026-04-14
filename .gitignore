@@ -34,10 +34,9 @@ dev/TimeSformer/**/__pycache__/
 dev/TimeSformer/**/*.pyc
 dev/TimeSformer/checkpoints/
 dev/TimeSformer/outputs/
-dev/TimeSformer/logs/
 
 # EvT-OG generated artifacts
-dev/EvT-OG/logs/
+dev/EvT-OG/outputs/
 
 # Keep the custom TimeSformer dataset loader source versioned
 !dev/TimeSformer/timesformer/datasets/
