@@ -37,6 +37,7 @@ dev/TimeSformer/outputs/
 
 # EvT-OG generated artifacts
 dev/EvT-OG/outputs/
+dev/EvT-OG/pretrained_models
 
 # Keep the custom TimeSformer dataset loader source versioned
 !dev/TimeSformer/timesformer/datasets/
