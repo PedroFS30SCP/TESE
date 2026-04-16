@@ -1,11 +1,15 @@
 # Pipeline (EvT-OG vs TimeSformer on EHWGesture): Setup Runbook
 
 This is the personal end-to-end setup being used in this project for EHWGesture:
-1. Convert raw EHW event recordings into EvT-OG split samples.
-2. Convert EHW split samples into sparse event-frame tensors for EvT-OG.
-3. Fine-tune EvT-OG on the full EHWGesture train/val split with early stopping.
-4. Evaluate the selected EHW EvT-OG checkpoint on the shared EHW test split.
-5. TimeSformer on EHWGesture will be added after the EvT-OG path is finished.
+1.1. Convert raw EHW event recordings into EvT-OG split samples.
+1.2. Convert EHW split samples into sparse event-frame tensors for EvT-OG.
+1.3. Fine-tune EvT-OG on the full EHWGesture train/val split with early stopping.
+1.4. Evaluate the selected EHW EvT-OG checkpoint on the shared EHW test split.
+
+2.1.TODO.
+2.2 TODO
+2.3 TODO
+2....TODO
 
 For a simple theory/explanation of each executed file (original vs custom vs modified), see `dev/benchmark/EHWGesture/README_THEORY.md`.
 
@@ -25,8 +29,8 @@ conda activate tese_ehw_py37
 ```bash
 python -c "import torch; print('cuda:', torch.cuda.is_available()); print('count:', torch.cuda.device_count()); print('gpu0:', torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'none')"
 ```
-
-## 1) EvT-OG: Build EHW Clean Dataset
+## 1) EvT-OG Train + Evaluation (Pretrained Weights)
+## 1.1) EvT-OG: Build EHW Clean Dataset
 
 Assumed paths:
 - Raw EHW dataset root: `$EHW_RAW_ROOT`
@@ -69,7 +73,7 @@ Output filenames look like:
 X01_LEFT_FTF1_label01.pckl
 ```
 
-## 2) EvT-OG: Build EHW Sparse Event-Frame Tensors
+## 1.2) EvT-OG: Build EHW Sparse Event-Frame Tensors
 
 Project root:
 
@@ -106,7 +110,7 @@ For long offline preprocessing with `nohup` and `ntfy`:
 nohup bash -lc 'curl -fsS -H "Title: EHW EvT preprocessing started" -d "Started ehwgesture.py for train+val+test on $(hostname) at $(date)." https://ntfy.sh/pedro_tese_checkup_105306 >/dev/null 2>&1; cd /home/ppfsa/TESE/dev/EvT-OG/dataset_scripts && /home/ppfsa/miniconda3/envs/tese_ehw_py37/bin/python ehwgesture.py; status=$?; if [ "$status" -eq 0 ]; then curl -fsS -H "Title: EHW EvT preprocessing finished" -d "ehwgesture.py finished successfully on $(hostname) at $(date)." https://ntfy.sh/pedro_tese_checkup_105306 >/dev/null 2>&1; else curl -fsS -H "Title: EHW EvT preprocessing failed" -d "ehwgesture.py failed with status $status on $(hostname) at $(date)." https://ntfy.sh/pedro_tese_checkup_105306 >/dev/null 2>&1; fi; exit $status' > /home/ppfsa/TESE/dev/datasets/evt_og/EHWGesture/ehwgesture_preprocess.log 2>&1 &
 ```
 
-## 3) EvT-OG: Fine-Tune on Full EHWGesture with Early Stopping
+## 1.3) EvT-OG: Fine-Tune on Full EHWGesture with Early Stopping
 
 Project root:
 
@@ -167,7 +171,7 @@ python train_ehwgesture.py \
   --output-name /ehwgesture_finetune_earlystop
 ```
 
-## 4) EvT-OG: Post-Hoc Evaluation on the Shared EHW Test Split
+## 1.4) EvT-OG: Post-Hoc Evaluation on the Shared EHW Test Split
 
 Project root:
 
@@ -226,9 +230,9 @@ Reported metrics/artifacts:
 - per-class recall on the shared test split
 - training/validation curve plot
 
-## 5) TimeSformer on EHWGesture
+## 2) TimeSformer on EHWGesture
 
-This part is intentionally not documented yet in this runbook because the current focus is to complete and validate the EHW EvT-OG benchmark first.
+TODO: This part is intentionally not documented yet in this runbook because the current focus is to complete and validate the EHW EvT-OG benchmark first.
 
 The next EHW TimeSformer path will follow the same benchmark principles:
 - same canonical split files

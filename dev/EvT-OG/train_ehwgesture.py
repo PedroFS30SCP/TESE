@@ -28,6 +28,12 @@ def parse_args():
         help="Number of dataloader workers.",
     )
     parser.add_argument(
+        "--val-workers",
+        type=int,
+        default=0,
+        help="Validation dataloader workers. Default 0 avoids sparse worker segfaults seen on EHWGesture.",
+    )
+    parser.add_argument(
         "--max-epochs",
         type=int,
         default=80,
@@ -43,6 +49,11 @@ def parse_args():
         default="/ehwgesture_finetune_earlystop",
         help="Output folder name created under ./pretrained_models.",
     )
+    parser.add_argument(
+        "--resume-from",
+        default=None,
+        help="Optional checkpoint path to resume an interrupted EHWGesture run.",
+    )
     return parser.parse_args()
 
 
@@ -52,7 +63,9 @@ def main():
     path_results = "pretrained_models"
     pretrained_dir = args.pretrained_model_dir
     all_params_path = os.path.join(pretrained_dir, "all_params.json")
-    pretrained_ckpt_path = get_best_weights(pretrained_dir, metric="val_acc", mode="max")
+    pretrained_ckpt_path = None
+    if args.resume_from is None:
+        pretrained_ckpt_path = get_best_weights(pretrained_dir, metric="val_acc", mode="max")
 
     base_params = json.load(open(all_params_path, "r"))
     train_params = copy.deepcopy(base_params)
@@ -61,6 +74,7 @@ def main():
     train_params["data_params"]["batch_size"] = args.batch_size
     train_params["data_params"]["sample_repetitions"] = 1
     train_params["data_params"]["workers"] = args.workers
+    train_params["data_params"]["val_workers"] = args.val_workers
     train_params["data_params"]["pin_memory"] = True
     train_params["data_params"]["balance"] = False
     train_params["data_params"]["classes_to_exclude"] = []
@@ -106,6 +120,7 @@ def main():
         callback_params=train_params["callbacks_params"],
         logger_params=train_params["logger_params"],
         pretrained_ckpt_path=pretrained_ckpt_path,
+        resume_ckpt_path=args.resume_from,
     )
     print("Fine-tuning path:", path_model)
 

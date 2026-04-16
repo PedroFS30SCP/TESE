@@ -113,6 +113,22 @@ class EvNetModel(LightningModule):
         return losses["loss_total"]
 
 
+class SafeCSVLogger(CSVLogger):
+    def save(self):
+        # CSV metric logging is what we care about here. On this environment,
+        # Lightning's repeated YAML hyperparameter save can crash inside PyYAML
+        # after successful epochs. Keep metrics/checkpoints flowing by skipping
+        # the brittle hparams.yaml rewrite on save().
+        if self._experiment is not None and hasattr(self._experiment, "hparams"):
+            original_hparams = self._experiment.hparams
+            self._experiment.hparams = {}
+            try:
+                return super().save()
+            finally:
+                self._experiment.hparams = original_hparams
+        return super().save()
+
+
 def load_csv_logs_as_df(path_model):
     log_file = os.path.join(path_model, "train_log", "version_0", "metrics.csv")
     logs = pd.read_csv(log_file)
@@ -183,8 +199,12 @@ def train(
     callback_params,
     logger_params,
     pretrained_ckpt_path=None,
+    resume_ckpt_path=None,
 ):
-    path_model = training_utils.create_model_folder(path_results, folder_name)
+    if resume_ckpt_path is not None:
+        path_model = os.path.dirname(os.path.dirname(os.path.abspath(resume_ckpt_path))) + "/"
+    else:
+        path_model = training_utils.create_model_folder(path_results, folder_name)
 
     callbacks = []
     for k, params in callback_params:
@@ -201,7 +221,7 @@ def train(
     loggers = []
     if "csv" in logger_params:
         logger_params["csv"]["save_dir"] = logger_params["csv"]["save_dir"].format(path_model)
-        loggers.append(CSVLogger(**logger_params["csv"]))
+        loggers.append(SafeCSVLogger(**logger_params["csv"]))
 
     dm = Event_DataModule(**data_params)
     backbone_params["token_dim"] = dm.token_dim
@@ -223,25 +243,26 @@ def train(
         optim_params=copy.deepcopy(optim_params),
         loss_weights=None if not data_params["balance"] else dm.train_dataloader().dataset.get_class_weights(),
     )
-    if pretrained_ckpt_path:
+    if pretrained_ckpt_path and resume_ckpt_path is None:
         load_pretrained_backbone(model, pretrained_ckpt_path)
 
     trainer = Trainer(**training_params, callbacks=callbacks, logger=loggers)
 
-    json.dump(
-        {
-            "data_params": data_params,
-            "backbone_params": backbone_params,
-            "clf_params": clf_params,
-            "training_params": training_params,
-            "optim_params": optim_params,
-            "callbacks_params": callback_params,
-            "logger_params": logger_params,
-        },
-        open(path_model + "all_params.json", "w"),
-    )
+    if resume_ckpt_path is None:
+        json.dump(
+            {
+                "data_params": data_params,
+                "backbone_params": backbone_params,
+                "clf_params": clf_params,
+                "training_params": training_params,
+                "optim_params": optim_params,
+                "callbacks_params": callback_params,
+                "logger_params": logger_params,
+            },
+            open(path_model + "all_params.json", "w"),
+        )
 
-    trainer.fit(model, dm)
+    trainer.fit(model, dm, ckpt_path=resume_ckpt_path)
 
     print(" ** Train finished:", path_model)
     logs = load_csv_logs_as_df(path_model)

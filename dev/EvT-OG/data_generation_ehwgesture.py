@@ -11,6 +11,9 @@ import copy
 from scipy import ndimage
 
 
+_MODULE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 DVS128_class_mapping = {0: 'background', 1: 'hand_clapping', 2: 'right_hand_wave', 
                  3: 'left_hand_wave', 4: 'right_arm_clockwise', 
                  5: 'right_arm_counter_clockwise', 6: 'left_arm_clockwise', 
@@ -217,6 +220,11 @@ class EventDataset(Dataset):
         
         # Load sparse matrix
         total_events = pickle.load(open(os.path.join(self.samples_folder + filename), 'rb'))  # events (t x H x W x 2)
+        # Avoid sparse.COO slicing inside dataloader workers. In this environment
+        # the sparse indexing path has been unstable under multiprocessing for
+        # EHWGesture and can raise low-level SystemError/segfault failures.
+        if hasattr(total_events, "todense"):
+            total_events = np.asarray(total_events.todense())
         
         # Crop sequence to self.num_sparse_frames
         if 'max_sample_len_ms' in self.augmentation_params and self.augmentation_params['max_sample_len_ms'] != -1:
@@ -237,12 +245,10 @@ class EventDataset(Dataset):
             # Get chunks by grouping sparse frames
             if current_chunk is None: 
                 current_chunk = total_events[max(0, sf_num-self.chunk_size):sf_num][::-1]
-                current_chunk = current_chunk.todense()
                 sf_num -= self.chunk_size
                 if '1' in self.preproc_polarity: current_chunk = current_chunk.sum(-1, keepdims=True)
             else:
                 sf = total_events[max(0, sf_num-self.num_extra_chunks):sf_num][::-1]
-                sf = sf.todense()
                 sf_num -= self.num_extra_chunks
                 if '1' in self.preproc_polarity: sf = sf.sum(-1, keepdims=True)
                 current_chunk = np.concatenate([current_chunk, sf])
@@ -381,7 +387,8 @@ class Event_DataModule(LightningDataModule):
                  dataset_name,
                  skip_last_event=False, sample_repetitions=1, preproc_polarity=None, 
                  custom_sampler = True,
-                 workers=8, pin_memory=False, classes_to_exclude=[], balance=None,
+                 workers=8, val_workers=None, test_workers=None,
+                 pin_memory=False, classes_to_exclude=[], balance=None,
                  val_ratio=0.2, val_seed=0, use_test_as_val=False):
         super().__init__()
         self.batch_size = batch_size
@@ -395,6 +402,8 @@ class Event_DataModule(LightningDataModule):
         self.augmentation_params = augmentation_params
         self.dataset_name = dataset_name
         self.workers = workers
+        self.val_workers = workers if val_workers is None else val_workers
+        self.test_workers = self.val_workers if test_workers is None else test_workers
         self.sample_repetitions = sample_repetitions
         self.preproc_polarity = preproc_polarity
         self.skip_last_event = skip_last_event
@@ -406,36 +415,36 @@ class Event_DataModule(LightningDataModule):
         
         self.dataset_name = dataset_name
         if dataset_name == 'DVS128':
-            self.data_folder = '../datasets/evt_og/clean_dataset_frames_12000/'
+            self.data_folder = os.path.join(_MODULE_DIR, '../datasets/evt_og/clean_dataset_frames_12000/')
             self.width, self.height = 128, 128
             self.num_classes = 12 - len(classes_to_exclude)
             self.class_mapping = copy.deepcopy(DVS128_class_mapping)
             for c in classes_to_exclude: del self.class_mapping[c]
             self.class_mapping = { i:l[1] for i,l in enumerate(sorted(self.class_mapping.items(), key=lambda x:x[0])) }
         elif dataset_name == 'EHWGesture':
-            self.data_folder = '../datasets/evt_og/EHWGesture/clean_dataset_frames_12000/'
+            self.data_folder = os.path.join(_MODULE_DIR, '../datasets/evt_og/EHWGesture/clean_dataset_frames_12000/')
             self.width, self.height = 160, 120
             self.num_classes = 5
             self.class_mapping = {
                 i: label for i, label in enumerate(EHWGesture_class_mapping.values())
             }
         elif dataset_name == 'ASL_DVS':
-            self.data_folder = './datasets/ICCV2019_DVS_dataset/clean_dataset_frames_2000/'
+            self.data_folder = os.path.join(_MODULE_DIR, './datasets/ICCV2019_DVS_dataset/clean_dataset_frames_2000/')
             self.width, self.height = 240, 180
             self.num_classes = 24
             self.class_mapping = { i:l for i,l in enumerate('a b c d e f g h i k l m n o p q r s t u v w x y'.split()) }
         elif dataset_name == 'SLAnimals_3s':
-            self.data_folder = './datasets/SL_animal_splits/dataset_3sets_12000/'
+            self.data_folder = os.path.join(_MODULE_DIR, './datasets/SL_animal_splits/dataset_3sets_12000/')
             self.width, self.height = 128, 128
             self.num_classes = 19
             self.class_mapping = { i:l for i,l in enumerate(range(self.num_classes)) }
         elif dataset_name == 'SLAnimals_4s':
-            self.data_folder = './datasets/SL_animal_splits/dataset_4sets_12000/'
+            self.data_folder = os.path.join(_MODULE_DIR, './datasets/SL_animal_splits/dataset_4sets_12000/')
             self.width, self.height = 128, 128
             self.num_classes = 19
             self.class_mapping = { i:l for i,l in enumerate(range(self.num_classes)) }
         elif dataset_name == 'Caltech':
-            self.data_folder = './datasets/N_Caltech_101/clean_dataset_frames_2000/'
+            self.data_folder = os.path.join(_MODULE_DIR, './datasets/N_Caltech_101/clean_dataset_frames_2000/')
             self.width, self.height = 240, 180
             self.num_classes = 101
             self.class_mapping = { i:l for i,l in enumerate(range(self.num_classes)) }
@@ -511,7 +520,7 @@ class Event_DataModule(LightningDataModule):
                            dataset_name=self.dataset_name, height=self.height, width=self.width,
                            augmentation_params=self.augmentation_params, 
                            classes_to_exclude=self.classes_to_exclude)
-        dl = DataLoader(dt, batch_size=(self.batch_size//2)+1, shuffle=False, collate_fn=self.custom_collate_fn, num_workers=self.workers, pin_memory=self.pin_memory)
+        dl = DataLoader(dt, batch_size=(self.batch_size//2)+1, shuffle=False, collate_fn=self.custom_collate_fn, num_workers=self.val_workers, pin_memory=self.pin_memory)
         return dl
     def test_dataloader(self):
         split_folder = self._require_split_folder('test')
@@ -525,7 +534,7 @@ class Event_DataModule(LightningDataModule):
                            dataset_name=self.dataset_name, height=self.height, width=self.width,
                            augmentation_params=self.augmentation_params, 
                            classes_to_exclude=self.classes_to_exclude)
-        dl = DataLoader(dt, batch_size=(self.batch_size//2)+1, shuffle=False, collate_fn=self.custom_collate_fn, num_workers=self.workers, pin_memory=self.pin_memory)
+        dl = DataLoader(dt, batch_size=(self.batch_size//2)+1, shuffle=False, collate_fn=self.custom_collate_fn, num_workers=self.test_workers, pin_memory=self.pin_memory)
         return dl
     
     
