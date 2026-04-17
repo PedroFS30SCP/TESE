@@ -116,7 +116,7 @@ latest_metrics_file() {
   if [[ -z "${METRICS_ROOT}" ]]; then
     return 1
   fi
-  find "${METRICS_ROOT}" -path "*/train_log/version_0/metrics.csv" | sort | tail -n 1
+  find "${METRICS_ROOT}" -path "*/train_log/version_*/metrics.csv" | sort -V | tail -n 1
 }
 
 monitor_loop() {

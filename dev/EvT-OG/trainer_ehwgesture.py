@@ -129,8 +129,35 @@ class SafeCSVLogger(CSVLogger):
         return super().save()
 
 
+def _latest_metrics_csv(path_model):
+    train_log_dir = os.path.join(path_model, "train_log")
+    if not os.path.isdir(train_log_dir):
+        raise FileNotFoundError(f"Missing train_log folder: {train_log_dir}")
+    metrics_files = [
+        os.path.join(train_log_dir, d, "metrics.csv")
+        for d in os.listdir(train_log_dir)
+        if os.path.isfile(os.path.join(train_log_dir, d, "metrics.csv"))
+    ]
+    if not metrics_files:
+        raise FileNotFoundError(f"No metrics.csv found under: {train_log_dir}")
+
+    def _sort_key(path):
+        folder = os.path.basename(os.path.dirname(path))
+        if folder.startswith("version_"):
+            try:
+                return (0, int(folder.split("_")[-1]))
+            except ValueError:
+                return (0, folder)
+        if folder == "final_version":
+            return (1, 10**9)
+        return (1, folder)
+
+    metrics_files.sort(key=_sort_key)
+    return metrics_files[-1]
+
+
 def load_csv_logs_as_df(path_model):
-    log_file = os.path.join(path_model, "train_log", "version_0", "metrics.csv")
+    log_file = _latest_metrics_csv(path_model)
     logs = pd.read_csv(log_file)
     for i, row in logs[logs.epoch.isna()].iterrows():
         candidates = logs[(~logs.epoch.isna()) & (logs.step >= int(row.step))].epoch.min()
@@ -216,6 +243,10 @@ def train(
             params = copy.deepcopy(params)
             params["dirpath"] = params["dirpath"].format(path_model)
             params.pop("period", None)
+            # Full Lightning checkpoints have been unstable in this environment
+            # after repeated resume cycles. We only need robust model weights for
+            # benchmark selection, so save weights-only checkpoints.
+            params["save_weights_only"] = True
             callbacks.append(ModelCheckpoint(**params))
 
     loggers = []

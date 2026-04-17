@@ -46,6 +46,11 @@ def parse_args():
         action="store_true",
         help="Skip FLOPs estimation if ptflops is unavailable or not needed.",
     )
+    parser.add_argument(
+        "--save-artifacts",
+        action="store_true",
+        help="Save evaluation JSON/CSV/pickle/PNG artifacts to disk. Disabled by default.",
+    )
     return parser.parse_args()
 
 
@@ -77,7 +82,7 @@ def get_param_stats(model):
     }
 
 
-def plot_training_evolution(path_model):
+def plot_training_evolution(path_model, output_path=None):
     logs = load_csv_logs_as_df(path_model)
     if logs.empty:
         return None
@@ -125,8 +130,8 @@ def plot_training_evolution(path_model):
     ax1.legend(loc="upper left")
     fig.tight_layout()
 
-    output_path = Path(path_model) / "training_evolution_ehwgesture.png"
-    fig.savefig(output_path, bbox_inches="tight")
+    if output_path is not None:
+        fig.savefig(output_path, bbox_inches="tight")
     plt.close(fig)
     return output_path
 
@@ -334,11 +339,16 @@ def main():
     cm_filename = path_model / "confusion_matrix_test_ehwgesture.pckl"
     cm_fig_filename = path_model / "confusion_matrix_test_ehwgesture.png"
     per_class_filename = path_model / "per_class_recall_test_ehwgesture.csv"
-    json.dump(summary, open(stats_filename, "w"), indent=2)
-    pickle.dump(df_cm, open(cm_filename, "wb"))
-    per_class_recall_df.to_csv(per_class_filename, index=False)
-    save_confusion_matrix_figure(df_cm, cm_fig_filename)
-    training_curve_path = plot_training_evolution(path_model)
+    training_curve_path = path_model / "training_evolution_ehwgesture.png"
+
+    if args.save_artifacts:
+        json.dump(summary, open(stats_filename, "w"), indent=2)
+        pickle.dump(df_cm, open(cm_filename, "wb"))
+        per_class_recall_df.to_csv(per_class_filename, index=False)
+        save_confusion_matrix_figure(df_cm, cm_fig_filename)
+        training_curve_path = plot_training_evolution(path_model, training_curve_path)
+    else:
+        training_curve_path = plot_training_evolution(path_model, output_path=None)
 
     print("\n ** EHWGesture evaluation finished")
     print(f" - Model folder: {path_model}")
@@ -360,12 +370,15 @@ def main():
     print(" - Per-class recall on the shared test split:")
     for _, row in per_class_recall_df.iterrows():
         print(f"   {row['class']}: {row['recall']*100:.2f} %")
-    print(f" - Saved stats: {stats_filename}")
-    print(f" - Saved confusion matrix: {cm_filename}")
-    print(f" - Saved confusion matrix figure: {cm_fig_filename}")
-    print(f" - Saved per-class recall: {per_class_filename}")
-    if training_curve_path is not None:
-        print(f" - Saved training curve figure: {training_curve_path}")
+    if args.save_artifacts:
+        print(f" - Saved stats: {stats_filename}")
+        print(f" - Saved confusion matrix: {cm_filename}")
+        print(f" - Saved confusion matrix figure: {cm_fig_filename}")
+        print(f" - Saved per-class recall: {per_class_filename}")
+        if training_curve_path is not None:
+            print(f" - Saved training curve figure: {training_curve_path}")
+    else:
+        print(" - Artifacts were not saved to disk (`--save-artifacts` not used).")
 
 
 if __name__ == "__main__":
