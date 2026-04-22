@@ -19,7 +19,10 @@ import timesformer.utils.distributed as du
 import timesformer.utils.logging as logging
 import timesformer.utils.metrics as metrics
 import timesformer.utils.misc as misc
-import timesformer.visualization.tensorboard_vis as tb
+try:
+    import timesformer.visualization.tensorboard_vis as tb
+except Exception:  # pragma: no cover
+    tb = None
 from timesformer.datasets import loader
 from timesformer.models import build_model
 from timesformer.utils.meters import TrainMeter, ValMeter
@@ -545,7 +548,7 @@ def train(cfg):
     val_meter = ValMeter(len(val_loader), cfg)
 
     # set up writer for logging to Tensorboard format.
-    if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
+    if cfg.TENSORBOARD.ENABLE and tb is not None and du.is_master_proc(
         cfg.NUM_GPUS * cfg.NUM_SHARDS
     ):
         writer = tb.TensorboardWriter(cfg)

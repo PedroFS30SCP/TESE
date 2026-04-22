@@ -1,0 +1,73 @@
+TRAIN:
+  ENABLE: True
+  DATASET: ehwgesture
+  BATCH_SIZE: 2
+  EVAL_PERIOD: 1
+  CHECKPOINT_PERIOD: 1
+  AUTO_RESUME: False
+  FINETUNE: True
+  CHECKPOINT_FILE_PATH: ''
+  EARLY_STOPPING:
+    ENABLE: True
+    MONITOR: top1_err
+    MODE: min
+    MIN_DELTA: 0.1
+    PATIENCE: 10
+
+DATA:
+  PATH_TO_DATA_DIR: ../datasets/timesformer/EHWGesture/manifests/all_samples_8f
+  PATH_PREFIX: ../datasets/timesformer/EHWGesture/frames
+  NUM_FRAMES: 8
+  SAMPLING_RATE: 1
+  TRAIN_JITTER_SCALES: [224, 256]
+  TRAIN_CROP_SIZE: 224
+  TEST_CROP_SIZE: 224
+  INPUT_CHANNEL_NUM: [3]
+  INV_UNIFORM_SAMPLE: True
+  RANDOM_FLIP: False
+  REVERSE_INPUT_CHANNEL: False
+
+TIMESFORMER:
+  ATTENTION_TYPE: 'divided_space_time'
+  PRETRAINED_MODEL: ''
+
+SOLVER:
+  BASE_LR: 0.0005
+  LR_POLICY: cosine
+  MAX_EPOCH: 50
+  MOMENTUM: 0.9
+  WEIGHT_DECAY: 1e-4
+  WARMUP_EPOCHS: 1.0
+  WARMUP_START_LR: 0.00005
+  OPTIMIZING_METHOD: sgd
+
+MODEL:
+  MODEL_NAME: vit_base_patch16_224
+  NUM_CLASSES: 5
+  ARCH: vit
+  LOSS_FUNC: cross_entropy
+  DROPOUT_RATE: 0.5
+
+TEST:
+  ENABLE: True
+  DATASET: ehwgesture
+  BATCH_SIZE: 2
+  NUM_ENSEMBLE_VIEWS: 1
+  NUM_SPATIAL_CROPS: 1
+  CHECKPOINT_FILE_PATH: ''
+
+DATA_LOADER:
+  NUM_WORKERS: 0
+  PIN_MEMORY: False
+
+NTFY:
+  ENABLE: True
+  TOPIC: "pedro_tese_checkup_105306"
+  TIMEOUT_SEC: 3.0
+  EVERY_N_EPOCHS: 5
+  OVERFIT_VAL_LOSS_DELTA: 0.05
+
+NUM_GPUS: 1
+NUM_SHARDS: 1
+RNG_SEED: 0
+OUTPUT_DIR: outputs/ehwgesture_all_samples_finetune_earlystop
