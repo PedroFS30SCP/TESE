@@ -34,7 +34,7 @@ def parse_args():
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("../datasets/timesformer/EHWGesture/manifests/all_samples_8f"),
+        default=Path("../datasets/timesformer/EHWGesture/manifests/all_samples_8f_stride4"),
         help="Output manifest directory.",
     )
     parser.add_argument(
@@ -55,6 +55,29 @@ def parse_args():
         choices=["rel", "abs"],
         default="rel",
         help="Store frame paths as relative-to --frames-root or absolute.",
+    )
+    parser.add_argument(
+        "--frame-ext",
+        choices=["png", "jpg"],
+        default="png",
+        help="Frame image extension to include in manifests.",
+    )
+    parser.add_argument(
+        "--max-clips-per-sample",
+        type=int,
+        default=0,
+        help="Optional cap for smoke manifests. 0 keeps all clips.",
+    )
+    parser.add_argument(
+        "--max-clips-per-split",
+        type=int,
+        default=0,
+        help="Optional cap for smoke manifests. 0 keeps all clips.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail immediately when a sample is missing or has too few frames.",
     )
     return parser.parse_args()
 
@@ -125,10 +148,14 @@ def frame_to_str(path: Path, path_mode: str, path_base: Path):
 def build_rows_for_sample(args, sample_id: str, split_name: str, clip_id_start: int):
     subject, _, hand_dir, _ = sample_parts(sample_id)
     frame_dir = args.frames_root / subject / hand_dir / sample_id
-    frame_paths = sorted(frame_dir.glob("frame_*.png"))
+    frame_paths = sorted(frame_dir.glob(f"frame_*.{args.frame_ext}"))
     ts_path = frame_dir / "timestamps.txt"
     if not frame_paths or not ts_path.exists():
         raise RuntimeError(f"Missing extracted frames for {sample_id}: {frame_dir}")
+    if len(frame_paths) < args.clip_len:
+        raise RuntimeError(
+            f"Too few frames for {sample_id}: {len(frame_paths)} < clip_len {args.clip_len}"
+        )
 
     timestamps = load_timestamps_sec(ts_path)
     if len(frame_paths) != len(timestamps):
@@ -165,6 +192,8 @@ def build_rows_for_sample(args, sample_id: str, split_name: str, clip_id_start: 
             }
         )
         clip_id += 1
+        if args.max_clips_per_sample > 0 and len(rows) >= args.max_clips_per_sample:
+            break
     return rows, clip_id
 
 
@@ -181,27 +210,57 @@ def write_manifest(path: Path, rows):
 def build_split(args, split_name: str):
     split_file = args.raw_root / f"trials_to_{split_name}.txt"
     rows = []
+    skipped = []
     next_id = 0
     for sample_id in iter_trial_ids(split_file):
-        sample_rows, next_id = build_rows_for_sample(args, sample_id, split_name, next_id)
+        try:
+            sample_rows, next_id = build_rows_for_sample(
+                args, sample_id, split_name, next_id
+            )
+        except Exception as exc:
+            if args.strict:
+                raise
+            skipped.append(
+                {
+                    "split": split_name,
+                    "sample_id": sample_id,
+                    "reason": str(exc),
+                }
+            )
+            print(f"[warn] Skipping {split_name} {sample_id}: {exc}")
+            continue
+        if args.max_clips_per_split > 0:
+            remaining = args.max_clips_per_split - len(rows)
+            if remaining <= 0:
+                break
+            sample_rows = sample_rows[:remaining]
         rows.extend(sample_rows)
-    return rows
+        if args.max_clips_per_split > 0 and len(rows) >= args.max_clips_per_split:
+            break
+    return rows, skipped
 
 
 def main():
     args = parse_args()
-    train_rows = build_split(args, "train")
-    val_rows = build_split(args, "val")
-    test_rows = build_split(args, "test")
+    train_rows, train_skipped = build_split(args, "train")
+    val_rows, val_skipped = build_split(args, "val")
+    test_rows, test_skipped = build_split(args, "test")
 
     write_manifest(args.output_dir / "train.csv", train_rows)
     write_manifest(args.output_dir / "val.csv", val_rows)
     write_manifest(args.output_dir / "test.csv", test_rows)
+    skipped_rows = train_skipped + val_skipped + test_skipped
+    if skipped_rows:
+        with (args.output_dir / "skipped_samples.csv").open("w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=["split", "sample_id", "reason"])
+            writer.writeheader()
+            writer.writerows(skipped_rows)
 
     print(f"Wrote manifests to: {args.output_dir}")
     print(f"Train clips: {len(train_rows)}")
     print(f"Val clips:   {len(val_rows)}")
     print(f"Test clips:  {len(test_rows)}")
+    print(f"Skipped samples: {len(skipped_rows)}")
 
 
 if __name__ == "__main__":

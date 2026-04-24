@@ -42,6 +42,24 @@ def parse_args():
         action="store_true",
         help="Overwrite existing extracted frame folders.",
     )
+    parser.add_argument(
+        "--resize-short-side",
+        type=int,
+        default=0,
+        help="Resize frames so the shorter side has this size before saving. 0 keeps native resolution.",
+    )
+    parser.add_argument(
+        "--image-ext",
+        choices=["png", "jpg"],
+        default="png",
+        help="Image format to save extracted frames.",
+    )
+    parser.add_argument(
+        "--jpeg-quality",
+        type=int,
+        default=90,
+        help="JPEG quality used when --image-ext jpg.",
+    )
     return parser.parse_args()
 
 
@@ -99,16 +117,30 @@ def select_video(raw_root: Path, sample_id: str, preferred_camera: str):
     return preferred, preferred_camera
 
 
-def extract_video(video_path: Path, output_dir: Path, overwrite: bool):
+def resize_short_side(frame, short_side: int):
+    if short_side <= 0:
+        return frame
+    height, width = frame.shape[:2]
+    current_short = min(height, width)
+    if current_short == short_side:
+        return frame
+    scale = float(short_side) / float(current_short)
+    new_width = max(1, int(round(width * scale)))
+    new_height = max(1, int(round(height * scale)))
+    return cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+
+def extract_video(video_path: Path, output_dir: Path, overwrite: bool, resize_short_side_px: int, image_ext: str, jpeg_quality: int):
     output_dir.mkdir(parents=True, exist_ok=True)
     timestamps_path = output_dir / "timestamps.txt"
-    existing_frames = list(output_dir.glob("frame_*.png"))
+    existing_frames = list(output_dir.glob(f"frame_*.{image_ext}"))
     if existing_frames and timestamps_path.exists() and not overwrite:
         return
 
     if overwrite:
-        for p in output_dir.glob("frame_*.png"):
-            p.unlink()
+        for ext in ("png", "jpg"):
+            for p in output_dir.glob(f"frame_*.{ext}"):
+                p.unlink()
         if timestamps_path.exists():
             timestamps_path.unlink()
 
@@ -128,8 +160,12 @@ def extract_video(video_path: Path, output_dir: Path, overwrite: bool):
             break
         ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         ts_sec = (ts_ms / 1000.0) if ts_ms and ts_ms > 0 else (frame_idx / fps)
-        frame_path = output_dir / f"frame_{frame_idx:010d}.png"
-        cv2.imwrite(str(frame_path), frame)
+        frame = resize_short_side(frame, resize_short_side_px)
+        frame_path = output_dir / f"frame_{frame_idx:010d}.{image_ext}"
+        if image_ext == "jpg":
+            cv2.imwrite(str(frame_path), frame, [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)])
+        else:
+            cv2.imwrite(str(frame_path), frame)
         timestamps.append(ts_sec)
         frame_idx += 1
 
@@ -156,7 +192,14 @@ def main():
         subject, _, hand_dir, _ = sample_parts(sample_id)
         out_dir = args.output_root / subject / hand_dir / sample_id
         try:
-            extract_video(video_path, out_dir, overwrite=args.overwrite)
+            extract_video(
+                video_path,
+                out_dir,
+                overwrite=args.overwrite,
+                resize_short_side_px=args.resize_short_side,
+                image_ext=args.image_ext,
+                jpeg_quality=args.jpeg_quality,
+            )
         except Exception as exc:
             failed.append((sample_id, str(exc)))
             print(f"[warn] Failed {sample_id}: {exc}")
