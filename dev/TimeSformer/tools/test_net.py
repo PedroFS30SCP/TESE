@@ -15,7 +15,10 @@ import timesformer.utils.checkpoint as cu
 import timesformer.utils.distributed as du
 import timesformer.utils.logging as logging
 import timesformer.utils.misc as misc
-import timesformer.visualization.tensorboard_vis as tb
+try:
+    import timesformer.visualization.tensorboard_vis as tb
+except Exception:
+    tb = None
 from timesformer.datasets import loader
 from timesformer.models import build_model
 from timesformer.utils.meters import TestMeter
@@ -186,7 +189,7 @@ def test(cfg):
     )
 
     # Set up writer for logging to Tensorboard format.
-    if cfg.TENSORBOARD.ENABLE and du.is_master_proc(
+    if cfg.TENSORBOARD.ENABLE and tb is not None and du.is_master_proc(
         cfg.NUM_GPUS * cfg.NUM_SHARDS
     ):
         writer = tb.TensorboardWriter(cfg)
