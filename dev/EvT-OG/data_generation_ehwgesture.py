@@ -6,6 +6,7 @@ import os
 import pickle
 import numpy as np
 import json
+import re
 from skimage.util import view_as_blocks
 import copy
 from scipy import ndimage
@@ -52,7 +53,13 @@ class EventDataset(Dataset):
         self.chunk_len_ms = chunk_len_ms
         self.chunk_len_us = chunk_len_ms*1000
         
-        self.sparse_frame_len_us = int(self.samples_folder.split('/')[-3].split('_')[-1])     # len of each loaded sparse frame
+        sparse_frame_match = re.search(r"clean_dataset_frames_(\d+)", self.samples_folder)
+        if sparse_frame_match is None:
+            raise ValueError(
+                "Could not infer sparse frame length from dataset path: "
+                f"{self.samples_folder}"
+            )
+        self.sparse_frame_len_us = int(sparse_frame_match.group(1))     # len of each loaded sparse frame
         self.sparse_frame_len_ms = self.sparse_frame_len_us // 1000
         assert  self.chunk_len_us % self.sparse_frame_len_us == 0
         self.chunk_size = self.chunk_len_us // self.sparse_frame_len_us             # Size of the grouped frame chunks
@@ -389,7 +396,8 @@ class Event_DataModule(LightningDataModule):
                  custom_sampler = True,
                  workers=8, val_workers=None, test_workers=None,
                  pin_memory=False, classes_to_exclude=[], balance=None,
-                 val_ratio=0.2, val_seed=0, use_test_as_val=False):
+                 val_ratio=0.2, val_seed=0, use_test_as_val=False,
+                 data_folder=None, width=None, height=None):
         super().__init__()
         self.batch_size = batch_size
         self.chunk_len_ms = chunk_len_ms
@@ -449,6 +457,13 @@ class Event_DataModule(LightningDataModule):
             self.num_classes = 101
             self.class_mapping = { i:l for i,l in enumerate(range(self.num_classes)) }
         else: raise ValueError(f'Dataset [{dataset_name}] not handled')
+        
+        if data_folder is not None:
+            self.data_folder = os.path.join(str(data_folder), "")
+        if width is not None:
+            self.width = int(width)
+        if height is not None:
+            self.height = int(height)
         
 
         self.preproc_event_size = 1 if '1' in self.preproc_polarity else 2

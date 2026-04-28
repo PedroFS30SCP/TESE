@@ -38,6 +38,32 @@ def parse_args():
         default=None,
         help="Internal use: preprocess one specific .pckl file inside a split.",
     )
+    parser.add_argument(
+        "--width",
+        type=int,
+        default=160,
+        help="Output event-frame width. Default keeps the current baseline at 160.",
+    )
+    parser.add_argument(
+        "--height",
+        type=int,
+        default=120,
+        help="Output event-frame height. Default keeps the current baseline at 120.",
+    )
+    parser.add_argument(
+        "--output-name",
+        default=None,
+        help=(
+            "Output dataset folder under EHWGesture. Defaults to "
+            "clean_dataset_frames_12000 for 160x120, otherwise "
+            "clean_dataset_frames_12000_<width>x<height>."
+        ),
+    )
+    parser.add_argument(
+        "--input-name",
+        default="clean_dataset",
+        help="Input split folder under EHWGesture containing train/val/test .pckl files.",
+    )
     return parser.parse_args()
 
 
@@ -51,16 +77,18 @@ chunk_len_us = chunk_len_ms * 1000
 raw_height = 240
 raw_width = 320
 
-# Keep EHW closer to the DVS EvT-OG operating regime.
-# Native 240x320 would increase the patch grid by ~5x with patch_size=6.
-height = 120
-width = 160
+def _output_name(width, height, explicit_name=None):
+    if explicit_name is not None:
+        return explicit_name
+    if width == 160 and height == 120:
+        return f"clean_dataset_frames_{chunk_len_us}"
+    return f"clean_dataset_frames_{chunk_len_us}_{width}x{height}"
 
 
-def _build_single_file(mode, ef):
-    path_dataset_src = os.path.join(_EHW_EVT_ROOT, "clean_dataset", mode)
+def _build_single_file(mode, ef, width=160, height=120, output_name=None, input_name="clean_dataset"):
+    path_dataset_src = os.path.join(_EHW_EVT_ROOT, input_name, mode)
     path_dataset_dst = os.path.join(
-        _EHW_EVT_ROOT, f"clean_dataset_frames_{chunk_len_us}", mode
+        _EHW_EVT_ROOT, _output_name(width, height, output_name), mode
     )
     os.makedirs(path_dataset_dst, exist_ok=True)
 
@@ -99,8 +127,8 @@ def _build_single_file(mode, ef):
 
     total_frames = []
     for chunk in total_chunks:
-        y = np.clip(chunk[:, 0] // 2, 0, height - 1)
-        x = np.clip(chunk[:, 1] // 2, 0, width - 1)
+        x = np.clip((chunk[:, 0] * width) // raw_width, 0, width - 1)
+        y = np.clip((chunk[:, 1] * height) // raw_height, 0, height - 1)
         p = chunk[:, 3]
         coords = np.stack([y, x, p], axis=1).astype("int32", copy=False)
         coords, counts = np.unique(coords, axis=0, return_counts=True)
@@ -121,10 +149,10 @@ def _build_single_file(mode, ef):
     return 0
 
 
-def build_mode(mode, limit=None):
-    path_dataset_src = os.path.join(_EHW_EVT_ROOT, "clean_dataset", mode)
+def build_mode(mode, limit=None, width=160, height=120, output_name=None, input_name="clean_dataset"):
+    path_dataset_src = os.path.join(_EHW_EVT_ROOT, input_name, mode)
     path_dataset_dst = os.path.join(
-        _EHW_EVT_ROOT, f"clean_dataset_frames_{chunk_len_us}", mode
+        _EHW_EVT_ROOT, _output_name(width, height, output_name), mode
     )
 
     if not os.path.isdir(path_dataset_src):
@@ -149,6 +177,14 @@ def build_mode(mode, limit=None):
             mode,
             "--single-file",
             ef,
+            "--width",
+            str(width),
+            "--height",
+            str(height),
+            "--output-name",
+            _output_name(width, height, output_name),
+            "--input-name",
+            input_name,
         ]
         result = subprocess.run(cmd)
         if result.returncode != 0:
@@ -164,9 +200,18 @@ def build_mode(mode, limit=None):
 if __name__ == "__main__":
     args = parse_args()
     if args.single_file is not None:
-        raise SystemExit(_build_single_file(args.mode, args.single_file))
+        raise SystemExit(
+            _build_single_file(
+                args.mode,
+                args.single_file,
+                width=args.width,
+                height=args.height,
+                output_name=args.output_name,
+                input_name=args.input_name,
+            )
+        )
     if args.mode == "all":
-        src_root = os.path.join(_EHW_EVT_ROOT, "clean_dataset")
+        src_root = os.path.join(_EHW_EVT_ROOT, args.input_name)
         modes = [
             m
             for m in ["train", "val", "test"]
@@ -178,4 +223,11 @@ if __name__ == "__main__":
         modes = [args.mode]
 
     for mode in modes:
-        build_mode(mode, limit=args.limit)
+        build_mode(
+            mode,
+            limit=args.limit,
+            width=args.width,
+            height=args.height,
+            output_name=args.output_name,
+            input_name=args.input_name,
+        )

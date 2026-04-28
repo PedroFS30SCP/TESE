@@ -1,5 +1,6 @@
 import argparse
 import copy
+import distutils.version
 import json
 import os
 
@@ -54,6 +55,29 @@ def parse_args():
         default=None,
         help="Optional checkpoint path to resume an interrupted EHWGesture run.",
     )
+    parser.add_argument(
+        "--data-folder",
+        default=None,
+        help="Optional preprocessed EHWGesture frames folder to train on.",
+    )
+    parser.add_argument(
+        "--event-width",
+        type=int,
+        default=None,
+        help="Width of the preprocessed EHWGesture event frames.",
+    )
+    parser.add_argument(
+        "--event-height",
+        type=int,
+        default=None,
+        help="Height of the preprocessed EHWGesture event frames.",
+    )
+    parser.add_argument(
+        "--patch-size",
+        type=int,
+        default=None,
+        help="Override EvT patch size. Keep 6 for the first resolution ablation.",
+    )
     return parser.parse_args()
 
 
@@ -78,6 +102,14 @@ def main():
     train_params["data_params"]["pin_memory"] = True
     train_params["data_params"]["balance"] = False
     train_params["data_params"]["classes_to_exclude"] = []
+    if args.data_folder is not None:
+        train_params["data_params"]["data_folder"] = args.data_folder
+    if args.event_width is not None:
+        train_params["data_params"]["width"] = args.event_width
+    if args.event_height is not None:
+        train_params["data_params"]["height"] = args.event_height
+    if args.patch_size is not None:
+        train_params["data_params"]["patch_size"] = args.patch_size
     train_params["data_params"]["augmentation_params"] = {
         "max_sample_len_ms": 504,
         "random_frame_size": 0.75,
